@@ -3,7 +3,7 @@
 A DeepSeek Harness plugin that shows **Kenari provider usage** — weekly and monthly consumption as percentages plus reset countdowns.
 
 -   📊 **Weekly + monthly usage** — reads the Kenari `/subscription` endpoint (`window_week` / `window_month`): `used_frac` rendered as a percentage and `resets_in_secs` as a human countdown
--   📌 **Persistent dock** — a usage card in `conversation.composer.dock` (header `◷ Usage` + `Left`, rows Week/Month with reset date + **remaining** % + Refresh), auto-polling every 60s, no prompt needed
+-   📌 **Header usage card** — a usage card in `conversation.session.header.utilities` (header `◷ Usage` + `Left`, rows Week/Month with reset date + **remaining** % + Refresh), auto-polling every 60s, no prompt needed
 -   🛠️ **Model tool** — `kenari_usage`, so the agent can query usage on demand
 -   🔑 **Session cookie auth** — sends your `kn_session` value (configured in the profile patch) as an explicit `Cookie:` header; nothing else leaves your machine
 -   ✅ **Tests** — vitest unit tests (format/parse) + mocked tool integration tests
@@ -59,7 +59,7 @@ When the cookie expires (HTTP 401), open Kenari in the browser to refresh the se
 
 ## Web UI
 
--   **Composer dock** — `◷ Usage … Left ⟳` header over `Week Fri, Sep 11, 1:20 AM … 11%` / `Month … … 78%` rows (remaining quota, whole percent), always visible under the composer, no prompt needed. Auto-polls the same-origin `GET /dsh-kenari-usage` every 60s; manual Refresh (disabled while fetching, debounced 1000ms, aborts the prior request) forces `?refresh=1`.
+-   **Header usage card** — `◷ Usage … Left ⟳` header over `Week Fri, Sep 11, 1:20 AM … 11%` / `Month … … 78%` rows (remaining quota, whole percent), pinned in the session header bar top-right, no prompt needed. Auto-polls the same-origin `GET /dsh-kenari-usage` every 60s; manual Refresh (disabled while fetching, debounced 1000ms, aborts the prior request) forces `?refresh=1`.
 -   **Expired session** — on 401 the dock shows a refresh-cookie error card, keeps the last known data dimmed, and offers Retry (no retry loop).
 -   **Countdown display** — computed once per fetch and ticked locally each second for display only; the tool-call card (`presentCall`/`presentResult`) still works via prompt as before.
 
@@ -87,7 +87,7 @@ src/
 ├── format.ts        # pure shared logic: parseSubscription, formatPercent, formatCountdown, formatUsage
 ├── panel.ts         # legacy framework-free DOM panel (unmounted; kept for tests)
 ├── client/
-│   ├── index.ts     # browser half: registers conversation.composer.dock
+│   ├── index.ts     # browser half: registers conversation.session.header.utilities
 │   ├── api.ts       # same-origin fetch to /dsh-kenari-usage + payload types
 │   └── KenariDock.tsx  # dock component (auto-poll 60s + Refresh + error card)
 ├── format.test.ts   # unit tests: percent, countdown, edges

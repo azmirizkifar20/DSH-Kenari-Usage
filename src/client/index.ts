@@ -2,8 +2,9 @@
  * Client-half entry of the kenari-usage plugin (bundled by build.mjs into
  * dist/client.js, loaded by the shell's module loader).
  *
- * Registers one surface: the usage dock line in the host's
- * `conversation.composer.dock` slot. The proven registration pattern is the
+ * Registers one surface: the usage card in the host's
+ * `conversation.session.header.utilities` slot (top-right header bar).
+ * The proven registration pattern is the
  * same one dsh-better-sidebar uses — `slots.inject(key, ...)` waits for the
  * host to declare the slot, then `slots.register(...)` contributes the
  * component and returns the disposer.
@@ -44,14 +45,14 @@ export interface KenariClientContext {
 }
 
 /**
- * Client plugin body: mounts the Kenari usage dock into the composer.
+ * Client plugin body: mounts the Kenari usage card into the session header.
  * @param ctx - the client cordis context (slots service).
  */
 export function apply(ctx: KenariClientContext): void {
-  ctx.slots.inject('conversation.composer.dock', () =>
+  ctx.slots.inject('conversation.session.header.utilities', () =>
     ctx.slots.register(
       {
-        name: 'conversation.composer.dock',
+        name: 'conversation.session.header.utilities',
         id: 'kenari-usage-dock',
         order: 20,
         label: 'Kenari usage dock',
