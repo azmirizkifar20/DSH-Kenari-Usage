@@ -5,41 +5,44 @@
  * UX mirrors the framework-free panel (`src/panel.ts`): Refresh is disabled
  * while fetching, rapid clicks collapse (1000ms debounce + abort-prior),
  * failures show an error card with Retry while the last data dims, and the
- * reset countdown is computed once per fetch and decremented locally by a
- * 1s display timer that never refetches. Unlike the panel, the dock ALSO
- * auto-polls: every `pollIntervalMs` (host-provided, default 60000) it
- * refetches the same-origin `/dsh-kenari-usage` route.
+ * reset display is recomputed from `fetchedAt` by a 1s display timer that
+ * never refetches. Unlike the panel, the dock ALSO auto-polls: every
+ * `pollIntervalMs` (host-provided, default 60000) it refetches the
+ * same-origin `/dsh-kenari-usage` route.
  *
- * Percent strings come from the host payload (single formatting path stays
- * host-side). Only the tiny ticking-countdown display ("Xd Yh Zm" /
- * "resets now") is duplicated here — the browser cannot import
- * `../format.ts` because host and client bundle separately.
+ * Layout is a compact usage card matching the reference design: a header row
+ * ("◷ Usage ⌄" left, muted "Left" label + Refresh right) over two data rows
+ * (Week / Month), each showing the reset date on the left and the REMAINING
+ * quota as a whole percent on the right.
+ *
+ * Display values are derived client-side from the host payload's raw numbers
+ * (`used_frac` → remaining %, `serverTime + resets_in_secs` → reset date):
+ * the browser cannot import `../format.ts` because host and client bundle
+ * separately.
  */
 
 import { useCallback, useEffect, useRef, useState, type CSSProperties } from 'react'
-import { fetchDock, type DockPayload } from './api.js'
+import { fetchDock, type DockPayload, type DockWindow } from './api.js'
 
 /** Minimum gap between non-forced loads (ms) — mirrors REFRESH_DEBOUNCE_MS in panel.ts. */
 const REFRESH_DEBOUNCE_MS = 1000
 
-/** Local display-tick cadence (ms) — updates countdown text only, never fetches. */
+/** Local display-tick cadence (ms) — updates reset-date freshness only, never fetches. */
 const DISPLAY_TICK_MS = 1000
 
 /** Auto-poll cadence (ms) when the host payload omits pollIntervalMs. */
 const DEFAULT_POLL_INTERVAL_MS = 60000
 
-/**
- * Local ticking-countdown display. Pure duplicate of the tiny slice of
- * format.ts the dock must re-derive as time passes (the host's pre-formatted
- * `countdown` string is frozen at fetch time).
- */
-function tickCountdown(remainingSecs: number): string {
-  if (remainingSecs <= 0) return 'resets now'
-  const total = Math.floor(remainingSecs)
-  const d = Math.floor(total / 86400)
-  const h = Math.floor((total % 86400) / 3600)
-  const m = Math.floor((total % 3600) / 60)
-  return `resets in ${d}d ${h}h ${m}m`
+/** Remaining quota as a whole percent string (e.g. used 0.894 → "11%"). */
+function remainingPct(usedFrac: number): string {
+  return `${Math.max(0, Math.round((1 - usedFrac) * 100))}%`
+}
+
+/** Format a reset moment like "Fri, Sep 11, 1:20 AM" (en-US, host locale agnostic). */
+function formatResetDate(date: Date): string {
+  const day = date.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })
+  const time = date.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })
+  return `${day}, ${time}`
 }
 
 /** Seconds elapsed since the fetch, floored (display decrement only). */
@@ -54,15 +57,16 @@ interface DockSnapshot {
 }
 
 /**
- * The composer dock line: `Week 88.3% · resets in 3d 12h 7m | Month … [Refresh]`.
- * Dark/light agnostic — inherits the app's text color, no theme CSS vars.
+ * The composer dock card: `◷ Usage ⌄ … Left ⟳` header over Week/Month rows
+ * (`Fri, Sep 11, 1:20 AM … 21%`). Dark/light agnostic — inherits the app's
+ * text color, no theme CSS vars.
  */
 export function KenariDock() {
   const [snapshot, setSnapshot] = useState<DockSnapshot | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [refreshing, setRefreshing] = useState(false)
   const [pollIntervalMs, setPollIntervalMs] = useState(DEFAULT_POLL_INTERVAL_MS)
-  // Bumped by the display timer so the countdown re-renders each second.
+  // Bumped by the display timer so the reset dates re-render each second.
   const [, setTick] = useState(0)
 
   const inFlight = useRef<AbortController | null>(null)
@@ -127,7 +131,7 @@ export function KenariDock() {
     }
   }, [pollIntervalMs, load])
 
-  // Display-only tick: re-renders the countdown from fetchedAt each second.
+  // Display-only tick: re-renders the reset dates from fetchedAt each second.
   useEffect(() => {
     const id = window.setInterval(() => {
       setTick((t) => t + 1)
@@ -140,41 +144,87 @@ export function KenariDock() {
   const snap = snapshot
   const dimmed = error !== null && snap !== null
 
-  const lineStyle: CSSProperties = {
+  const cardStyle: CSSProperties = {
     display: 'inline-flex',
-    alignItems: 'center',
-    gap: 6,
+    flexDirection: 'column',
+    maxWidth: 320,
     color: 'inherit',
     fontSize: '0.85em',
-    lineHeight: 1.4,
-    whiteSpace: 'nowrap',
+    lineHeight: 1.5,
     opacity: dimmed ? 0.5 : 1,
+  }
+
+  const rowStyle: CSSProperties = {
+    display: 'flex',
+    alignItems: 'baseline',
+    justifyContent: 'space-between',
+    gap: 8,
+    whiteSpace: 'nowrap',
+  }
+
+  const mutedStyle: CSSProperties = {
+    opacity: 0.55,
   }
 
   const buttonStyle: CSSProperties = {
     color: 'inherit',
     font: 'inherit',
-    padding: '0 6px',
+    background: 'none',
+    border: 'none',
+    padding: '0 2px',
     cursor: refreshing ? 'default' : 'pointer',
     opacity: refreshing ? 0.5 : 1,
   }
 
+  /** Reset date for one window, ticked forward from fetchedAt for display. */
+  const resetDate = (serverTime: number, win: DockWindow, fetchedAt: number): string =>
+    formatResetDate(new Date(serverTime + win.resets_in_secs * 1000 - elapsedSecs(fetchedAt) * 1000))
+
+  /** One data row: label + reset date left, remaining percent right. */
+  const usageRow = (label: string, serverTime: number, win: DockWindow, fetchedAt: number) => (
+    <div style={rowStyle}>
+      <span>
+        {`${label} `}
+        <span style={mutedStyle}>{resetDate(serverTime, win, fetchedAt)}</span>
+      </span>
+      <strong>{remainingPct(win.used_frac)}</strong>
+    </div>
+  )
+
   return (
-    <div style={lineStyle} data-testid="kenari-dock">
-      {snap !== null && (
-        <span data-testid="kenari-usage-line">
-          {`Week ${snap.payload.week.percent} · ${tickCountdown(snap.payload.week.resets_in_secs - elapsedSecs(snap.fetchedAt))}`}
-          {' | '}
-          {`Month ${snap.payload.month.percent} · ${tickCountdown(snap.payload.month.resets_in_secs - elapsedSecs(snap.fetchedAt))}`}
+    <div style={cardStyle} data-testid="kenari-dock">
+      <div style={rowStyle}>
+        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+          <span aria-hidden="true">◷</span>
+          <strong>Usage</strong>
+          <span style={{ ...mutedStyle, fontSize: '0.8em' }} aria-hidden="true">
+            ⌄
+          </span>
         </span>
+        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+          <span style={mutedStyle}>Left</span>
+          <button
+            type="button"
+            style={buttonStyle}
+            data-testid="kenari-refresh"
+            aria-label="Refresh"
+            title="Refresh"
+            disabled={refreshing}
+            onClick={() => load(false)}
+          >
+            ⟳
+          </button>
+        </span>
+      </div>
+      {snap !== null && (
+        <div data-testid="kenari-usage-line">
+          {usageRow('Week', snap.payload.serverTime, snap.payload.week, snap.fetchedAt)}
+          {usageRow('Month', snap.payload.serverTime, snap.payload.month, snap.fetchedAt)}
+        </div>
       )}
       {error !== null && (
-        <span
-          style={{ color: 'inherit', opacity: 0.8 }}
-          data-testid="kenari-error"
-          role="alert"
-        >
-          {`Kenari usage: ${error}`}
+        <div style={{ ...rowStyle, opacity: 0.8 }} data-testid="kenari-error" role="alert">
+          <span>{`Kenari usage: ${error}`}</span>
           <button
             type="button"
             style={buttonStyle}
@@ -183,17 +233,8 @@ export function KenariDock() {
           >
             Retry
           </button>
-        </span>
+        </div>
       )}
-      <button
-        type="button"
-        style={buttonStyle}
-        data-testid="kenari-refresh"
-        disabled={refreshing}
-        onClick={() => load(false)}
-      >
-        Refresh
-      </button>
     </div>
   )
 }
