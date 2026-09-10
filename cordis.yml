@@ -1,4 +1,5 @@
 - insert:
     - id: kenari-usage
       name: 'file:///D:/laragon/www/private/kenari-usage-dh-plugin/src/kenari-usage.ts'
-      config: {}
+      config:
+        endpoint: 'https://kenari.id/api/subscription'
