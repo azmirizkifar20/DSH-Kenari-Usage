@@ -10,7 +10,8 @@
  * `pollIntervalMs` (host-provided, default 60000) it refetches the
  * same-origin `/dsh-kenari-usage` route.
  *
- * Layout is a compact usage card matching the reference design: a header row
+ * Layout is a compact usage card rendered as a FLOATING surface fixed at the
+ * bottom-right of the viewport (level with the composer input): a header row
  * ("◷ Usage ⌄" left, muted "Left" label + Refresh right) over two data rows
  * (Week / Month), each showing the reset date on the left and the REMAINING
  * quota as a whole percent on the right.
@@ -57,9 +58,12 @@ interface DockSnapshot {
 }
 
 /**
- * The composer dock card: `◷ Usage ⌄ … Left ⟳` header over Week/Month rows
- * (`Fri, Sep 11, 1:20 AM … 21%`). Dark/light agnostic — inherits the app's
- * text color, no theme CSS vars.
+ * The composer dock card: a floating surface pinned bottom-right of the
+ * viewport (fixed, clear of the composer input), rendering the
+ * `◷ Usage ⌄ … Left ⟳` header over Week/Month rows
+ * (`Fri, Sep 11, 1:20 AM … 21%`). Themed via the host's CSS vars
+ * (`--dsw-alias-bg-base` / `--dsw-alias-border-l1`) with neutral fallbacks,
+ * so it reads as a floating card over chat content in both light and dark.
  */
 export function KenariDock() {
   const [snapshot, setSnapshot] = useState<DockSnapshot | null>(null)
@@ -145,9 +149,18 @@ export function KenariDock() {
   const dimmed = error !== null && snap !== null
 
   const cardStyle: CSSProperties = {
-    display: 'inline-flex',
+    position: 'fixed',
+    bottom: 100,
+    right: 24,
+    zIndex: 50,
+    display: 'flex',
     flexDirection: 'column',
     maxWidth: 320,
+    background: 'var(--dsw-alias-bg-base, #1e1e1e)',
+    border: '1px solid var(--dsw-alias-border-l1, rgba(255,255,255,0.12))',
+    borderRadius: 10,
+    padding: '8px 12px',
+    boxShadow: '0 4px 16px rgba(0,0,0,0.35)',
     color: 'inherit',
     fontSize: '0.85em',
     lineHeight: 1.5,
