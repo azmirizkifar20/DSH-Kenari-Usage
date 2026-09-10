@@ -2,7 +2,7 @@ node_modules/
 dist/
 lib/
 .codegraph/
-.omo/evidence/
+.omo/
 *.tgz
 .DS_Store
 Thumbs.db
