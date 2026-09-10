@@ -10,6 +10,7 @@ export const inject = ['tools']
 export interface Config {
   endpoint: string
   cookieName?: string
+  sessionCookie?: string
   pollIntervalSecs?: number
 }
 
@@ -18,7 +19,12 @@ export const Config: Schema<Config> = Schema.object({
     .pattern(/^https?:\/\/.+/)
     .default('https://kenari.id/api/subscription')
     .description('Kenari subscription endpoint (override via cordis.yml, no code edit needed).'),
-  cookieName: Schema.string().description('Optional ambient session cookie name (no secret value stored).'),
+  cookieName: Schema.string()
+    .default('kn_session')
+    .description('Kenari session cookie name, sent as the Cookie header.'),
+  sessionCookie: Schema.string().description(
+    'Kenari session cookie value (secret — set via the profile cordis.patch.yml, never committed to git).',
+  ),
   pollIntervalSecs: Schema.number().min(0).default(0).description('Poll interval in seconds, 0 = off.'),
 })
 
@@ -27,8 +33,10 @@ const FETCH_TIMEOUT_MS = 8000
 
 const DEFAULT_ENDPOINT = 'https://kenari.id/api/subscription'
 
-/** Endpoint cell set by apply(); defaults to the plan endpoint for direct tool use. */
+/** Config cells set by apply(); endpoint default allows direct tool use in tests. */
 let activeEndpoint: string = DEFAULT_ENDPOINT
+let activeCookieName: string = 'kn_session'
+let activeCookieValue: string | undefined
 
 interface UsageWindow {
   used_frac: number
@@ -127,8 +135,11 @@ async function fetchJsonOnce(endpoint: string, callerSignal: AbortSignal): Promi
     ctrl.abort(new Error('fetch timeout after 8000ms'))
   }, FETCH_TIMEOUT_MS)
   try {
+    const headers: Record<string, string> = {
+      Cookie: `${activeCookieName}=${activeCookieValue}`,
+    }
     return await fetch(endpoint, {
-      credentials: 'include',
+      headers,
       signal: ctrl.signal,
     })
   } finally {
@@ -138,6 +149,13 @@ async function fetchJsonOnce(endpoint: string, callerSignal: AbortSignal): Promi
 }
 
 async function loadUsage(endpoint: string, callerSignal: AbortSignal): Promise<ToolValue> {
+  if (activeCookieValue === undefined || activeCookieValue === '') {
+    return {
+      error:
+        'Kenari sessionCookie is not configured — set sessionCookie in the profile cordis.patch.yml (id: kenari-usage), then restart dsh web.',
+      retryable: false,
+    }
+  }
   let lastNetworkError: string = 'unknown fetch failure'
   for (let attempt = 0; attempt < 2; attempt += 1) {
     let res: Response
@@ -153,7 +171,8 @@ async function loadUsage(endpoint: string, callerSignal: AbortSignal): Promise<T
       if (res.status >= 400 && res.status < 500) {
         if (res.status === 401) {
           return {
-            error: 'Kenari session expired (401) — re-login in browser, then retry.',
+            error:
+              'Kenari session expired (401) — copy the fresh kn_session cookie value into sessionCookie in the profile cordis.patch.yml (id: kenari-usage), then restart dsh web.',
             retryable: false,
           }
         }
@@ -246,6 +265,10 @@ export const kenariUsageTool = defineTool({
 
 export function apply(ctx: Context, config: Config) {
   activeEndpoint = config.endpoint
+  if (config.cookieName !== undefined && config.cookieName !== '') {
+    activeCookieName = config.cookieName
+  }
+  activeCookieValue = config.sessionCookie
   ctx.tools.register(kenariUsageTool)
   console.log('[kenari-usage] plugin loaded!')
 }

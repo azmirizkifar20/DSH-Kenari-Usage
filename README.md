@@ -5,7 +5,7 @@ A DeepSeek Harness plugin that shows **Kenari provider usage** — weekly and mo
 -   📊 **Weekly + monthly usage** — reads the Kenari `/subscription` endpoint (`window_week` / `window_month`): `used_frac` rendered as a percentage and `resets_in_secs` as a human countdown
 -   🖥️ **Panel UI** — a framework-free DOM panel with manual Refresh (`[data-testid="kenari-refresh"]`), debounced, abort-safe, with error card + dimmed last data + Retry on 401/offline
 -   🛠️ **Model tool** — `kenari_usage`, so the agent can query usage on demand
--   🔒 **No secrets in config** — authenticates with the ambient browser session (`credentials: 'include'`); the Schemastery `Config` holds only the endpoint, never a token or cookie value
+-   🔑 **Session cookie auth** — sends your `kn_session` value (configured in the profile patch) as an explicit `Cookie:` header; nothing else leaves your machine
 -   ✅ **Tests** — vitest unit tests (format/parse) + mocked tool integration tests
 
 ## Install
@@ -42,22 +42,25 @@ dsh plugin --profile web remove dsh-kenari-usage
 
 ## Configuration
 
-The endpoint is resolved from plugin config (override without code edits — HMR picks it up). There are no secret fields: authentication reuses your ambient Kenari browser session, so **log in to Kenari in the same browser/profile first**.
+The endpoint is resolved from plugin config (override without code edits — HMR picks it up). Authentication uses an explicit session cookie: copy the `kn_session` value from your logged-in Kenari browser session (DevTools → Application → Cookies → `kenari.id`) and set it as `sessionCookie`. Without it the tool returns a "not configured" error without fetching.
 
-Override the plugin row in the profile's `cordis.patch.yml` to configure:
+Override the plugin row in the profile's `cordis.patch.yml` to configure (note: a patch replaces the row's whole `config`, so restate `endpoint` too):
 
 ```yaml
 - id: kenari-usage
   config:
     endpoint: https://kenari.id/api/subscription  # Kenari subscription endpoint
-    cookieName: kenari_session                     # optional, informational only (no value stored)
+    sessionCookie: 'PASTE_KN_SESSION_VALUE_HERE'   # secret — plaintext in this file, never share/commit it
+    cookieName: kn_session                         # optional, defaults to kn_session
     pollIntervalSecs: 0                            # 0 = off (manual Refresh only), min 60 if enabled
 ```
+
+When the cookie expires (HTTP 401), open Kenari in the browser to refresh the session, paste the new `kn_session` value, and restart `dsh web`.
 
 ## Web UI
 
 -   **Usage panel** — weekly percent + reset countdown · monthly percent + reset countdown, with a manual Refresh button (disabled while fetching, debounced 1000ms, aborts the prior request).
--   **Expired session** — on 401 the panel shows a re-login error card, keeps the last known data dimmed, and offers Retry (no retry loop).
+-   **Expired session** — on 401 the panel shows a refresh-cookie error card, keeps the last known data dimmed, and offers Retry (no retry loop).
 -   **Countdown display** — computed once per fetch and ticked locally for display only; the plugin never polls the endpoint on its own (`pollIntervalSecs` defaults to 0).
 
 > Slot note: this plugin renders its card through the tool result (`presentCall`/`presentResult`) and ships a framework-free DOM panel (`src/panel.ts`, `createKenariPanel(root, load)`) mountable into any host-provided slot element — the `conversation.composer.dock` / `settings.section` seats from other plugins are not assumed.
@@ -106,4 +109,4 @@ cordis.patch.yml    # bundle patch manifest (package name)
 
 ## Security
 
-The fetch uses the ambient session (`credentials: 'include'`) from the harness host (Node), so Kenari CORS headers don't apply to the tool path — and no cookie or token value is ever stored in config, bundled into `dist/`, or written to logs. As with any third-party plugin, review the source before installing.
+The fetch sends the configured `sessionCookie` as an explicit `Cookie:` header from the harness host (Node), so Kenari CORS headers don't apply to the tool path. The cookie value lives only in your profile's `cordis.patch.yml` — it is never bundled into `dist/`, never written to logs, and never committed to this repo. Treat that file as secret: don't share or commit it, and rotate the value if exposed. As with any third-party plugin, review the source before installing.
