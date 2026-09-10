@@ -3,7 +3,7 @@
 A DeepSeek Harness plugin that shows **Kenari provider usage** — weekly and monthly consumption as percentages plus reset countdowns.
 
 -   📊 **Weekly + monthly usage** — reads the Kenari `/subscription` endpoint (`window_week` / `window_month`): `used_frac` rendered as a percentage and `resets_in_secs` as a human countdown
--   🖥️ **Panel UI** — a framework-free DOM panel with manual Refresh (`[data-testid="kenari-refresh"]`), debounced, abort-safe, with error card + dimmed last data + Retry on 401/offline
+-   📌 **Persistent dock** — a stats line in `conversation.composer.dock` (week % · month % · countdowns + Refresh), auto-polling every 60s, no prompt needed
 -   🛠️ **Model tool** — `kenari_usage`, so the agent can query usage on demand
 -   🔑 **Session cookie auth** — sends your `kn_session` value (configured in the profile patch) as an explicit `Cookie:` header; nothing else leaves your machine
 -   ✅ **Tests** — vitest unit tests (format/parse) + mocked tool integration tests
@@ -59,11 +59,9 @@ When the cookie expires (HTTP 401), open Kenari in the browser to refresh the se
 
 ## Web UI
 
--   **Usage panel** — weekly percent + reset countdown · monthly percent + reset countdown, with a manual Refresh button (disabled while fetching, debounced 1000ms, aborts the prior request).
--   **Expired session** — on 401 the panel shows a refresh-cookie error card, keeps the last known data dimmed, and offers Retry (no retry loop).
--   **Countdown display** — computed once per fetch and ticked locally for display only; the plugin never polls the endpoint on its own (`pollIntervalSecs` defaults to 0).
-
-> Slot note: this plugin renders its card through the tool result (`presentCall`/`presentResult`) and ships a framework-free DOM panel (`src/panel.ts`, `createKenariPanel(root, load)`) mountable into any host-provided slot element — the `conversation.composer.dock` / `settings.section` seats from other plugins are not assumed.
+-   **Composer dock** — `Week 88.3% · resets in 3d 12h 7m | Month 22.1% · … [Refresh]`, always visible under the composer, no prompt needed. Auto-polls the same-origin `GET /dsh-kenari-usage` every 60s; manual Refresh (disabled while fetching, debounced 1000ms, aborts the prior request) forces `?refresh=1`.
+-   **Expired session** — on 401 the dock shows a refresh-cookie error card, keeps the last known data dimmed, and offers Retry (no retry loop).
+-   **Countdown display** — computed once per fetch and ticked locally each second for display only; the tool-call card (`presentCall`/`presentResult`) still works via prompt as before.
 
 ## Model tool
 
@@ -78,34 +76,40 @@ The agent can call `kenari_usage`:
 pnpm install
 pnpm typecheck   # tsc --noEmit
 pnpm test        # vitest unit tests (format + tool, mocked fetch)
-pnpm build       # tsc → dist/ (host entry + shared formatter + panel)
+pnpm build       # node build.mjs → dist/ (host tsc + client esbuild bundle)
 ```
 
 ### Structure
 
 ```text
 src/
-├── kenari-usage.ts  # host half: Config, defineTool kenari_usage, fetch + render + cards
+├── kenari-usage.ts  # host half: Config, defineTool kenari_usage, GET /dsh-kenari-usage route
 ├── format.ts        # pure shared logic: parseSubscription, formatPercent, formatCountdown, formatUsage
-├── panel.ts         # framework-free DOM panel (thin wrapper over formatUsage)
+├── panel.ts         # legacy framework-free DOM panel (unmounted; kept for tests)
+├── client/
+│   ├── index.ts     # browser half: registers conversation.composer.dock
+│   ├── api.ts       # same-origin fetch to /dsh-kenari-usage + payload types
+│   └── KenariDock.tsx  # dock component (auto-poll 60s + Refresh + error card)
 ├── format.test.ts   # unit tests: percent, countdown, edges
 ├── tool.test.ts     # tool integration tests with mocked fetch
 └── panel.test.ts    # panel behavior tests with mocked DOM
+build.mjs           # dual build: tsc (host) + esbuild browser CJS + __ModuleLoader__ banner
 cordis.yml          # local dev patch (points at dist/)
 cordis.patch.yml    # bundle patch manifest (package name)
 ```
 
 ### Build notes
 
--   `tsc` compiles `src/` to `dist/`; the local `cordis.yml` patch points at the **built** `dist/kenari-usage.js` (Node ESM cannot resolve the TS sibling `./format.js` from source).
+-   `build.mjs` runs `tsc -p tsconfig.json` for the host half (`dist/kenari-usage.js` + `format.js`; Node ESM cannot resolve the TS sibling `./format.js` from source), then esbuild-bundles `src/client/index.ts` → `dist/client.js` (browser CJS wrapped in `window.__ModuleLoader__.load`, id `dsh-kenari-usage`; react/react-dom/`@deepseek-ai/*` stay external, resolved by the shell).
+-   `package.json` declares `exports` (`./dist/kenari-usage.js`, `./dist/client.js`) + `dsh.client` (`platform: web`, inject runtime/locale/ui-slots) so the shell loads the dock after `dsh plugin add github:`.
 -   `@deepseek-ai/cordis` is a peer dependency; `@deepseek-ai/dsh-tools` / `dsh-llm` are pinned via `pnpm.overrides` to a coherent `0.1.0-rc.8` tree (caret rc ranges otherwise resolve across rc lines).
 -   Tool render/card functions (`output.render`, `presentResult`, `presentationMeta`) are pure — no I/O, clock, or random — so they replay safely.
 
 ## Scope notes
 
 -   **Week/month only** — other `/subscription` fields (plan name, micro-IDR balances, free tier, web search, coupons, perks) are parsed past but intentionally never rendered in v1.
--   **No live polling** — no `setInterval` fetching, no WebSocket/SSE; `pollIntervalSecs` defaults to 0 (off) with a 60s floor if ever enabled.
--   **Single formatting path** — the tool and the panel share `formatUsage`; there is deliberately no second formatting implementation to drift.
+-   **Auto-poll, dock only** — the dock refetches every 60s (host-suggested `pollIntervalMs`, floor 60s); the chat tool path never polls. No WebSocket/SSE.
+-   **Single formatting path** — the tool, the host route, and the dock share `formatUsage` (host-side); the dock only re-derives the ticking countdown locally from `resets_in_secs`.
 
 ## Security
 

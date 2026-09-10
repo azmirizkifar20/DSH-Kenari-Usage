@@ -37,6 +37,7 @@ const DEFAULT_ENDPOINT = 'https://kenari.id/api/subscription'
 let activeEndpoint: string = DEFAULT_ENDPOINT
 let activeCookieName: string = 'kn_session'
 let activeCookieValue: string | undefined
+let activePollIntervalSecs: number = 0
 
 interface UsageWindow {
   used_frac: number
@@ -269,6 +270,151 @@ export function apply(ctx: Context, config: Config) {
     activeCookieName = config.cookieName
   }
   activeCookieValue = config.sessionCookie
+  activePollIntervalSecs = config.pollIntervalSecs ?? 0
   ctx.tools.register(kenariUsageTool)
+  installUsageRoute(ctx)
   console.log('[kenari-usage] plugin loaded!')
+}
+
+/** Same-origin host route path for the usage panel (no secrets in URL). */
+const USAGE_ROUTE_PATH = '/dsh-kenari-usage'
+
+/** Outer budget for one route request (covers both 8s fetch attempts). */
+const ROUTE_TIMEOUT_MS = 30000
+
+/** Structural mirror of the host-webserver request face (subset the route reads). */
+interface UsageHttpRequest {
+  url?: string
+  method?: string
+}
+
+/** Structural mirror of the host-webserver response face (subset the route writes). */
+interface UsageHttpResponse {
+  writeHead(status: number, headers?: Record<string, string>): void
+  end(body?: string): void
+}
+
+/** Structural mirror of the host-webserver exact route registration. */
+interface UsageWebServer {
+  register(route: {
+    kind: 'exact'
+    path: string
+    handler: (req: UsageHttpRequest, res: UsageHttpResponse) => void | Promise<void>
+  }): () => void
+}
+
+function pollIntervalMsOf(secs: number): number {
+  return secs >= 60 ? Math.floor(secs * 1000) : 60000
+}
+
+function writeUsageJson(res: UsageHttpResponse, status: number, value: unknown): void {
+  res.writeHead(status, {
+    'content-type': 'application/json; charset=utf-8',
+    'cache-control': 'no-store',
+  })
+  res.end(JSON.stringify(value))
+}
+
+/**
+ * GET /dsh-kenari-usage handler. Fetches fresh on every request (no caching;
+ * `?refresh=1` is accepted as a no-op). Never includes secrets in the
+ * response — only aggregate numbers and precomputed display strings.
+ */
+async function handleUsageRequest(
+  req: UsageHttpRequest,
+  res: UsageHttpResponse,
+): Promise<void> {
+  if (req.method !== undefined && req.method !== 'GET') {
+    writeUsageJson(res, 405, {
+      ok: false,
+      error: 'Method not allowed — use GET /dsh-kenari-usage',
+      retryable: false,
+    })
+    return
+  }
+  let value: ToolValue
+  try {
+    value = await loadUsage(activeEndpoint, AbortSignal.timeout(ROUTE_TIMEOUT_MS))
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err)
+    writeUsageJson(res, 502, {
+      ok: false,
+      error: `Kenari usage request failed: ${message}`,
+      retryable: true,
+    })
+    return
+  }
+  if (isErrorValue(value)) {
+    writeUsageJson(res, 502, { ok: false, error: value.error, retryable: value.retryable })
+    return
+  }
+  const formatted = formatUsage(value)
+  writeUsageJson(res, 200, {
+    ok: true,
+    week: {
+      used_frac: value.week.used_frac,
+      resets_in_secs: value.week.resets_in_secs,
+      percent: formatted.card.week.percent,
+      countdown: formatted.card.week.countdown,
+    },
+    month: {
+      used_frac: value.month.used_frac,
+      resets_in_secs: value.month.resets_in_secs,
+      percent: formatted.card.month.percent,
+      countdown: formatted.card.month.countdown,
+    },
+    serverTime: Date.now(),
+    pollIntervalMs: pollIntervalMsOf(activePollIntervalSecs),
+  })
+}
+
+/** Lazy webServer lookup — undefined until the host mounts the service. */
+function getUsageWebServer(ctx: Context): UsageWebServer | undefined {
+  try {
+    const svc = ctx.get('webServer') as UsageWebServer | undefined
+    if (svc === undefined || svc === null) return undefined
+    if (typeof svc.register !== 'function') return undefined
+    return svc
+  } catch {
+    return undefined
+  }
+}
+
+/**
+ * Register the exact host route, retrying when the webServer service appears
+ * later. All lookups are guarded so direct tool use (mock ctx without
+ * get/on/effect) keeps working. The route disposer runs on ctx dispose.
+ */
+function installUsageRoute(ctx: Context): void {
+  let disposeRoute: (() => void) | undefined
+  const tryInstall = (): void => {
+    if (disposeRoute !== undefined) return
+    const webServer = getUsageWebServer(ctx)
+    if (webServer === undefined) return
+    disposeRoute = webServer.register({
+      kind: 'exact',
+      path: USAGE_ROUTE_PATH,
+      handler: handleUsageRequest,
+    })
+  }
+  tryInstall()
+  try {
+    if (typeof ctx.on === 'function') {
+      ctx.on('internal/service', (name: unknown) => {
+        if (name === 'webServer') tryInstall()
+      })
+    }
+  } catch {
+    // No event surface (direct tool use) — the tool registration above stands alone.
+  }
+  try {
+    if (typeof ctx.effect === 'function') {
+      ctx.effect(() => () => {
+        disposeRoute?.()
+        disposeRoute = undefined
+      })
+    }
+  } catch {
+    // No effect surface — nothing to clean up.
+  }
 }
