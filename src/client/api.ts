@@ -4,7 +4,7 @@
  * Same-origin only: every request goes to the plugin's host route
  * `/dsh-kenari-usage`, which the host half serves (host team implements the
  * handler in parallel — this file codes against that exact JSON contract).
- * No cookies are attached by hand, no secrets live here, and no request is
+ * No credentials are attached by hand, no secrets live here, and no request is
  * ever cross-origin.
  */
 

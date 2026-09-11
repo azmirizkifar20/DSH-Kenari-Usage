@@ -160,25 +160,17 @@ describe('GET /dsh-kenari-usage Bearer route (frozen contract)', () => {
     expect(res.status).toBe(405)
   })
 
-  it('cookie fallback path keeps the legacy percent/countdown shape', async () => {
-    const sample = {
-      window_week: { resets_in_secs: 322311, used_frac: 0.842881845 },
-      window_month: { resets_in_secs: 2309511, used_frac: 0.21072046125 },
-    }
-    vi.stubGlobal(
-      'fetch',
-      vi.fn(async () => new Response(JSON.stringify(sample), { status: 200 })),
-    )
-    const route = await captureRoute({
-      endpoint: 'https://kenari.id/api/subscription',
-      sessionCookie: 'dummy',
-    })
+  it('missing apiKey -> 502 not-configured without fetching', async () => {
+    const spy = vi.fn(async () => new Response(JSON.stringify(QUOTA_JSON), { status: 200 }))
+    vi.stubGlobal('fetch', spy)
+    const route = await captureRoute({})
     const res = makeRes()
     await route.handler({ method: 'GET' }, res)
-    expect(res.status).toBe(200)
+    expect(res.status).toBe(502)
     const payload = JSON.parse(res.body) as Record<string, unknown>
-    const week = payload['week'] as Record<string, unknown>
-    expect(week['percent']).toBe('84.3%')
-    expect(typeof week['countdown']).toBe('string')
+    expect(payload['ok']).toBe(false)
+    expect(String(payload['error'])).toMatch(/apiKey/)
+    expect(payload['retryable']).toBe(false)
+    expect(spy).not.toHaveBeenCalled()
   })
 })

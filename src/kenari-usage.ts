@@ -1,7 +1,6 @@
 import type { Context } from '@deepseek-ai/cordis'
 import Schema from '@deepseek-ai/schemastery'
 import { defineTool } from '@deepseek-ai/dsh-tools'
-import { formatUsage, parseSubscription, type ParsedUsage } from './format.js'
 import {
   formatResetShort,
   formatRp,
@@ -16,57 +15,27 @@ export const name = 'kenari-usage'
 export const inject = ['tools']
 
 export interface Config {
-  endpoint: string
-  cookieName?: string
-  sessionCookie?: string
   apiKey?: string
   pollIntervalSecs?: number
 }
 
 export const Config: Schema<Config> = Schema.object({
-  endpoint: Schema.string()
-    .pattern(/^https?:\/\/.+/)
-    .default('https://kenari.id/api/subscription')
-    .description(
-      'Deprecated fallback: Kenari subscription endpoint for the cookie path (unused when apiKey is set).',
-    ),
-  cookieName: Schema.string()
-    .default('kn_session')
-    .description('Deprecated fallback: Kenari session cookie name, sent as the Cookie header.'),
-  sessionCookie: Schema.string().description(
-    'Deprecated fallback: Kenari session cookie value (secret — profile cordis.patch.yml only, never commit). Ignored when apiKey is set.',
-  ),
   apiKey: Schema.string().description(
-    'Kenari API key (kn-... secret — set via the profile cordis.patch.yml, never commit it). When set and non-empty the official Bearer API is used; otherwise the deprecated sessionCookie fallback applies.',
+    'Kenari API key (kn-... secret — set via the profile cordis.patch.yml, never commit it).',
   ),
   pollIntervalSecs: Schema.number().min(0).default(0).description('Poll interval in seconds, 0 = off.'),
 })
-
-/** Per-attempt fetch timeout (ms). */
-const FETCH_TIMEOUT_MS = 8000
-
-const DEFAULT_ENDPOINT = 'https://kenari.id/api/subscription'
 
 /** Official Bearer API endpoints. */
 export const QUOTA_URL = 'https://kenari.id/v1/account/quota'
 export const MCP_URL = 'https://kenari.id/mcp'
 
-/** Config cells set by apply(); endpoint default allows direct tool use in tests. */
-let activeEndpoint: string = DEFAULT_ENDPOINT
-let activeCookieName: string = 'kn_session'
-let activeCookieValue: string | undefined
+/** Per-attempt fetch timeout (ms). */
+const FETCH_TIMEOUT_MS = 8000
+
+/** Config cells set by apply(). */
 let activeApiKey: string | undefined
 let activePollIntervalSecs: number = 0
-
-interface UsageWindow {
-  used_frac: number
-  resets_in_secs: number
-}
-
-interface SuccessValue {
-  week: UsageWindow
-  month: UsageWindow
-}
 
 interface ModelUsagePayload extends ParsedModelUsage {
   window: '30d'
@@ -82,14 +51,10 @@ interface ErrorValue {
   retryable: boolean
 }
 
-type ToolValue = SuccessValue | QuotaSuccessValue | ErrorValue
+type ToolValue = QuotaSuccessValue | ErrorValue
 
 function isErrorValue(value: ToolValue): value is ErrorValue {
   return 'error' in value
-}
-
-function isQuotaValue(value: ToolValue): value is QuotaSuccessValue {
-  return 'quota' in value
 }
 
 type MetaRecord = Record<string, string | boolean>
@@ -98,53 +63,17 @@ function errorMeta(scope: string, v: ErrorValue): MetaRecord {
   return { ok: false, window: scope, error: v.error, retryable: v.retryable }
 }
 
-function okMeta(scope: string, v: SuccessValue | QuotaSuccessValue): MetaRecord {
-  if (isQuotaValue(v)) {
-    return {
-      ok: true,
-      window: scope,
-      plan: v.quota.plan ?? '',
-      hasUsage: v.usage !== null,
-    }
-  }
-  const formatted = formatUsage(v)
+function okMeta(scope: string, v: QuotaSuccessValue): MetaRecord {
   return {
     ok: true,
     window: scope,
-    overQuota: formatted.meta.overQuota,
-    resetsNowWeek: formatted.meta.resetsNow.week,
-    resetsNowMonth: formatted.meta.resetsNow.month,
-    weekPercent: formatted.card.week.percent,
-    monthPercent: formatted.card.month.percent,
+    plan: v.quota.plan ?? '',
+    hasUsage: v.usage !== null,
   }
 }
 
 const outputSchema = {
   oneOf: [
-    {
-      type: 'object',
-      additionalProperties: false,
-      properties: {
-        week: {
-          type: 'object',
-          additionalProperties: false,
-          required: true,
-          properties: {
-            used_frac: { type: 'number', required: true },
-            resets_in_secs: { type: 'number', required: true },
-          },
-        },
-        month: {
-          type: 'object',
-          additionalProperties: false,
-          required: true,
-          properties: {
-            used_frac: { type: 'number', required: true },
-            resets_in_secs: { type: 'number', required: true },
-          },
-        },
-      },
-    },
     {
       type: 'object',
       additionalProperties: false,
@@ -254,36 +183,7 @@ function formatQuotaText(v: QuotaSuccessValue): string {
   return `Plan ${planLabel} — ${windows}; ${totals}`
 }
 
-/** Fetch with per-attempt timeout, honoring caller cancellation. Throws on caller abort. */
-async function fetchJsonOnce(endpoint: string, callerSignal: AbortSignal): Promise<Response> {
-  const ctrl = new AbortController()
-  const onCallerAbort = (): void => {
-    ctrl.abort(callerSignal.reason)
-  }
-  if (callerSignal.aborted) {
-    throw callerSignal.reason instanceof Error
-      ? callerSignal.reason
-      : new Error('aborted')
-  }
-  callerSignal.addEventListener('abort', onCallerAbort, { once: true })
-  const timer = setTimeout(() => {
-    ctrl.abort(new Error('fetch timeout after 8000ms'))
-  }, FETCH_TIMEOUT_MS)
-  try {
-    const headers: Record<string, string> = {
-      Cookie: `${activeCookieName}=${activeCookieValue}`,
-    }
-    return await fetch(endpoint, {
-      headers,
-      signal: ctrl.signal,
-    })
-  } finally {
-    clearTimeout(timer)
-    callerSignal.removeEventListener('abort', onCallerAbort)
-  }
-}
-
-/** Bearer fetch with the same per-attempt timeout + caller-abort pattern. */
+/** Bearer fetch with per-attempt timeout + caller-abort pattern. */
 async function fetchBearerOnce(
   url: string,
   apiKey: string,
@@ -321,59 +221,6 @@ async function fetchBearerOnce(
     clearTimeout(timer)
     callerSignal.removeEventListener('abort', onCallerAbort)
   }
-}
-
-async function loadUsage(endpoint: string, callerSignal: AbortSignal): Promise<ToolValue> {
-  if (activeCookieValue === undefined || activeCookieValue === '') {
-    return {
-      error:
-        'Kenari sessionCookie is not configured — set sessionCookie in the profile cordis.patch.yml (id: kenari-usage), then restart dsh web.',
-      retryable: false,
-    }
-  }
-  let lastNetworkError: string = 'unknown fetch failure'
-  for (let attempt = 0; attempt < 2; attempt += 1) {
-    let res: Response
-    try {
-      res = await fetchJsonOnce(endpoint, callerSignal)
-    } catch (err) {
-      if (callerSignal.aborted) throw err
-      lastNetworkError = err instanceof Error ? err.message : String(err)
-      if (attempt === 0) continue
-      return { error: `Kenari subscription fetch failed: ${lastNetworkError}`, retryable: true }
-    }
-    if (!res.ok) {
-      if (res.status >= 400 && res.status < 500) {
-        if (res.status === 401) {
-          return {
-            error:
-              'Kenari session expired (401) — copy the fresh kn_session cookie value into sessionCookie in the profile cordis.patch.yml (id: kenari-usage), then restart dsh web.',
-            retryable: false,
-          }
-        }
-        return { error: `Kenari subscription request failed (${res.status})`, retryable: false }
-      }
-      if (attempt === 0) continue
-      return { error: `Kenari subscription request failed (${res.status})`, retryable: true }
-    }
-    let json: unknown
-    try {
-      json = await res.json()
-    } catch {
-      return { error: 'Kenari subscription response malformed: invalid JSON', retryable: false }
-    }
-    try {
-      const parsed: ParsedUsage = parseSubscription(json)
-      return {
-        week: { used_frac: parsed.week.used_frac, resets_in_secs: parsed.week.resets_in_secs },
-        month: { used_frac: parsed.month.used_frac, resets_in_secs: parsed.month.resets_in_secs },
-      }
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err)
-      return { error: `Kenari subscription response malformed: ${msg}`, retryable: false }
-    }
-  }
-  return { error: `Kenari subscription fetch failed: ${lastNetworkError}`, retryable: true }
 }
 
 /** Extract the MCP `tools/call` markdown payload, tolerating SSE framing. */
@@ -579,10 +426,7 @@ export const kenariUsageTool = defineTool({
       if (isErrorValue(v)) {
         return [{ type: 'text', text: errorText(v) }]
       }
-      if (isQuotaValue(v)) {
-        return [{ type: 'text', text: formatQuotaText(v) }]
-      }
-      return [{ type: 'text', text: formatUsage(v).text }]
+      return [{ type: 'text', text: formatQuotaText(v) }]
     },
     presentationMeta: (args, value) => {
       const v = value as ToolValue
@@ -594,12 +438,16 @@ export const kenariUsageTool = defineTool({
   isConcurrencySafe: () => true,
   async execute(args, exec) {
     void args
-    if (hasApiKey()) {
-      return loadQuotaUsage(activeApiKey as string, exec.signal) as Promise<
-        QuotaSuccessValue | ErrorValue
-      >
+    if (!hasApiKey()) {
+      return {
+        error:
+          'Kenari apiKey is not configured — set apiKey in the profile cordis.patch.yml (id: kenari-usage), then restart dsh web.',
+        retryable: false,
+      }
     }
-    return loadUsage(activeEndpoint, exec.signal) as Promise<SuccessValue | ErrorValue>
+    return loadQuotaUsage(activeApiKey as string, exec.signal) as Promise<
+      QuotaSuccessValue | ErrorValue
+    >
   },
   presentCall: (args) => {
     const scope = (args as { window?: string }).window
@@ -619,7 +467,7 @@ export const kenariUsageTool = defineTool({
       | undefined
     if (meta !== undefined && meta !== null && (meta as { ok?: unknown }).ok === false) {
       const err = typeof meta.error === 'string' ? meta.error : ''
-      const needsLogin = /401|re-login|session expired|invalid API key/i.test(err)
+      const needsLogin = /401|invalid API key/i.test(err)
       return {
         card: 'generic',
         title: needsLogin ? 'Kenari usage — re-login required' : 'Kenari usage — error',
@@ -631,11 +479,6 @@ export const kenariUsageTool = defineTool({
 })
 
 export function apply(ctx: Context, config: Config) {
-  activeEndpoint = config.endpoint
-  if (config.cookieName !== undefined && config.cookieName !== '') {
-    activeCookieName = config.cookieName
-  }
-  activeCookieValue = config.sessionCookie
   activeApiKey = config.apiKey
   activePollIntervalSecs = config.pollIntervalSecs ?? 0
   ctx.tools.register(kenariUsageTool)
@@ -699,51 +542,18 @@ async function handleUsageRequest(
     })
     return
   }
-  if (hasApiKey()) {
-    let value: ToolValue
-    try {
-      value = await loadQuotaUsage(
-        activeApiKey as string,
-        AbortSignal.timeout(ROUTE_TIMEOUT_MS),
-      )
-    } catch (err) {
-      const message = err instanceof Error ? err.message : String(err)
-      writeUsageJson(res, 502, {
-        ok: false,
-        error: `Kenari usage request failed: ${message}`,
-        retryable: true,
-      })
-      return
-    }
-    if (isErrorValue(value)) {
-      writeUsageJson(res, 502, { ok: false, error: value.error, retryable: value.retryable })
-      return
-    }
-    const quota = (value as QuotaSuccessValue).quota
-    const usage = (value as QuotaSuccessValue).usage
-    writeUsageJson(res, 200, {
-      ok: true,
-      plan: quota.plan,
-      coupon: quota.coupon ?? null,
-      week: quota.week,
-      month: quota.month,
-      usage:
-        usage === null
-          ? null
-          : {
-              window: '30d',
-              models: usage.models,
-              total_requests: usage.total_requests,
-              total_tokens: usage.total_tokens,
-            },
-      serverTime: Date.now(),
-      pollIntervalMs: pollIntervalMsOf(activePollIntervalSecs),
+  if (!hasApiKey()) {
+    writeUsageJson(res, 502, {
+      ok: false,
+      error:
+        'Kenari apiKey is not configured — set apiKey in the profile cordis.patch.yml (id: kenari-usage), then restart dsh web.',
+      retryable: false,
     })
     return
   }
   let value: ToolValue
   try {
-    value = await loadUsage(activeEndpoint, AbortSignal.timeout(ROUTE_TIMEOUT_MS))
+    value = await loadQuotaUsage(activeApiKey as string, AbortSignal.timeout(ROUTE_TIMEOUT_MS))
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err)
     writeUsageJson(res, 502, {
@@ -757,22 +567,23 @@ async function handleUsageRequest(
     writeUsageJson(res, 502, { ok: false, error: value.error, retryable: value.retryable })
     return
   }
-  const formatted = formatUsage(value as SuccessValue)
-  const legacy = value as SuccessValue
+  const quota = (value as QuotaSuccessValue).quota
+  const usage = (value as QuotaSuccessValue).usage
   writeUsageJson(res, 200, {
     ok: true,
-    week: {
-      used_frac: legacy.week.used_frac,
-      resets_in_secs: legacy.week.resets_in_secs,
-      percent: formatted.card.week.percent,
-      countdown: formatted.card.week.countdown,
-    },
-    month: {
-      used_frac: legacy.month.used_frac,
-      resets_in_secs: legacy.month.resets_in_secs,
-      percent: formatted.card.month.percent,
-      countdown: formatted.card.month.countdown,
-    },
+    plan: quota.plan,
+    coupon: quota.coupon ?? null,
+    week: quota.week,
+    month: quota.month,
+    usage:
+      usage === null
+        ? null
+        : {
+            window: '30d',
+            models: usage.models,
+            total_requests: usage.total_requests,
+            total_tokens: usage.total_tokens,
+          },
     serverTime: Date.now(),
     pollIntervalMs: pollIntervalMsOf(activePollIntervalSecs),
   })
