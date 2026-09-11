@@ -748,7 +748,7 @@ export function KenariDock() {
                       <div style={{ ...mutedStyle, fontSize: '0.8em' }}>
                         {`${formatCompact(today.requests)} req · ${formatCompact(today.tokens)} tok hari ini`}
                       </div>
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                      <div style={{ maxHeight: 180, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 2 }}>
                         {today.models.map((m) => (
                           <div key={m.model} style={modelRowStyle}>
                             <span style={{ ...mutedStyle, overflow: 'hidden', textOverflow: 'ellipsis' }}>{m.model}</span>
