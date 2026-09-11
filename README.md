@@ -3,10 +3,11 @@
 A DeepSeek Harness plugin that shows **Kenari provider usage** — weekly and monthly consumption as percentages plus reset countdowns.
 
 -   📊 **Weekly + monthly usage** — reads the Kenari `/subscription` endpoint (`window_week` / `window_month`): `used_frac` rendered as a percentage and `resets_in_secs` as a human countdown
--   📌 **Floating usage card** — a Kenari Usage card (`◷ Kenari Usage`, rows Week/Month with reset date + **used** % + a usage bar + Refresh) floating above the sidebar's Settings row, auto-polling every 60s, no prompt needed
+-   📌 **Floating usage card** — a Kenari Usage card (`◷ Kenari Usage`, rows Week/Month with reset date + **used** % + usage bar + Refresh) floating bottom-right over the chat body (default level with the composer; drag the header to reposition anywhere, position persists in `localStorage`; chevron collapses/expands), auto-polling every 60s, no prompt needed
 -   🛠️ **Model tool** — `kenari_usage`, so the agent can query usage on demand
 -   🔑 **Session cookie auth** — sends your `kn_session` value (configured in the profile patch) as an explicit `Cookie:` header; nothing else leaves your machine
--   ✅ **Tests** — vitest unit tests (format/parse) + mocked tool integration tests
+-   🖥️ **Web UI** — floating card (draggable, collapsible, usage bars). The framework-free DOM panel in `src/panel.ts` is legacy/unmounted, kept only for tests.
+-   ✅ **Tests** — vitest, 24 tests (format/parse + mocked tool integration + legacy panel behavior)
 
 ## Install
 
@@ -42,7 +43,7 @@ dsh plugin --profile web remove dsh-kenari-usage
 
 ## Configuration
 
-The endpoint is resolved from plugin config (override without code edits — HMR picks it up). Authentication uses an explicit session cookie: copy the `kn_session` value from your logged-in Kenari browser session (DevTools → Application → Cookies → `kenari.id`) and set it as `sessionCookie`. Without it the tool returns a "not configured" error without fetching.
+The endpoint is resolved from plugin config (override without code edits). Authentication uses an explicit session cookie: copy the `kn_session` value from your logged-in Kenari browser session (DevTools → Application → Cookies → `kenari.id`) and set it as `sessionCookie`. Without it the tool returns a "not configured" error without fetching.
 
 Override the plugin row in the profile's `cordis.patch.yml` to configure (note: a patch replaces the row's whole `config`, so restate `endpoint` too):
 
@@ -52,7 +53,7 @@ Override the plugin row in the profile's `cordis.patch.yml` to configure (note: 
     endpoint: https://kenari.id/api/subscription  # Kenari subscription endpoint
     sessionCookie: 'PASTE_KN_SESSION_VALUE_HERE'   # secret — plaintext in this file, never share/commit it
     cookieName: kn_session                         # optional, defaults to kn_session
-    pollIntervalSecs: 0                            # 0 = off (manual Refresh only), min 60 if enabled
+    pollIntervalSecs: 0                            # dock auto-poll cadence in seconds; host clamps to min 60 (0 = default 60s)
 ```
 
 When the cookie expires (HTTP 401), open Kenari in the browser to refresh the session, paste the new `kn_session` value, and restart `dsh web`.
@@ -108,8 +109,8 @@ cordis.patch.yml    # bundle patch manifest (package name)
 ## Scope notes
 
 -   **Week/month only** — other `/subscription` fields (plan name, micro-IDR balances, free tier, web search, coupons, perks) are parsed past but intentionally never rendered in v1.
--   **Auto-poll, dock only** — the dock refetches every 60s (host-suggested `pollIntervalMs`, floor 60s); the chat tool path never polls. No WebSocket/SSE.
--   **Single formatting path** — the tool, the host route, and the dock share `formatUsage` (host-side); the dock only re-derives the ticking countdown locally from `resets_in_secs`.
+-   **Auto-poll, dock only** — the dock refetches every 60s (host-suggested `pollIntervalMs`, floored at 60s even when `pollIntervalSecs` is 0); the chat tool path never polls. No WebSocket/SSE.
+-   **Single formatting path** — the tool and the host route share `formatUsage` (host-side); the dock re-derives its used-% and reset-date display client-side from the raw `used_frac` / `serverTime + resets_in_secs` numbers (host and client bundle separately).
 
 ## Security
 
