@@ -55,6 +55,18 @@ const POSITION_STORAGE_KEY = 'kenari-usage-dock-position'
 /** localStorage key for the user-resized card width. */
 const WIDTH_STORAGE_KEY = 'kenari-usage-dock-width'
 
+/** Card height (px) — null = auto/content-driven (default). User-resizable
+ *  160–min(800, viewport-32) via the top-edge handle. */
+const CARD_HEIGHT_MIN = 160
+const CARD_HEIGHT_MAX = 800
+
+/** Header + padding reserve subtracted from the explicit card height to get
+ *  the body maxHeight (header row ~40px + gaps/padding ~70px). */
+const CARD_CHROME_RESERVE = 110
+
+/** localStorage key for the user-resized card height. */
+const HEIGHT_STORAGE_KEY = 'kenari-usage-dock-height'
+
 const METER_FILL_COLOR = '#e3a53d'
 const METER_TRACK_COLOR = 'rgba(255,255,255,0.12)'
 const STAT_BOX_COLOR = 'rgba(255,255,255,0.06)'
@@ -116,6 +128,38 @@ function saveCardWidth(width: number): void {
     window.localStorage.setItem(WIDTH_STORAGE_KEY, String(clampCardWidth(width)))
   } catch {
     // Private-browsing/storage-disabled: resizing still works, just doesn't persist.
+  }
+}
+
+function clampCardHeight(n: number): number {
+  const max = Math.max(CARD_HEIGHT_MIN, Math.min(CARD_HEIGHT_MAX, window.innerHeight - 32))
+  return Math.min(max, Math.max(CARD_HEIGHT_MIN, Math.round(n)))
+}
+
+function loadCardHeight(): number | null {
+  try {
+    const raw = window.localStorage.getItem(HEIGHT_STORAGE_KEY)
+    if (raw === null) return null
+    const parsed = Number(raw)
+    return Number.isFinite(parsed) ? clampCardHeight(parsed) : null
+  } catch {
+    return null
+  }
+}
+
+function saveCardHeight(height: number): void {
+  try {
+    window.localStorage.setItem(HEIGHT_STORAGE_KEY, String(clampCardHeight(height)))
+  } catch {
+    // Private-browsing/storage-disabled: resizing still works, just doesn't persist.
+  }
+}
+
+function clearCardHeight(): void {
+  try {
+    window.localStorage.removeItem(HEIGHT_STORAGE_KEY)
+  } catch {
+    // Storage-disabled: in-memory state still resets to auto.
   }
 }
 
@@ -289,6 +333,7 @@ export function KenariDock() {
   const [position, setPosition] = useState<DockPosition | null>(() => loadPosition())
   const [dragging, setDragging] = useState(false)
   const [cardWidth, setCardWidth] = useState(() => loadCardWidth())
+  const [cardHeight, setCardHeight] = useState<number | null>(() => loadCardHeight())
   const [resizing, setResizing] = useState(false)
   const [dayBaseline, setDayBaseline] = useState<DayBaseline | null>(() => loadDayBaseline())
   // Bumped by the display timer so derived displays re-render each second.
@@ -300,6 +345,7 @@ export function KenariDock() {
   const cardRef = useRef<HTMLDivElement | null>(null)
   const dragOffset = useRef<{ x: number; y: number } | null>(null)
   const resizeStart = useRef<{ startX: number; startWidth: number; startLeft: number | null; startTop: number } | null>(null)
+  const resizeVStart = useRef<{ startY: number; startHeight: number; startTop: number | null } | null>(null)
 
   // Drag-to-reposition: pointerdown on the header starts tracking; move/up
   // listen on window so the drag keeps working even if the pointer leaves
@@ -383,6 +429,60 @@ export function KenariDock() {
     [cardWidth, position, handleResizeMove, handleResizeUp],
   )
 
+  // Top-edge vertical resize: dragging up grows the card (bottom edge stays
+  // fixed), dragging down shrinks it. The start height is measured from the
+  // card (state may be null=auto); when the card was moved (top-anchored),
+  // `top` is adjusted so the bottom edge stays fixed — mirroring the width
+  // logic. In the default bottom-anchored state position stays null and the
+  // bottom stays fixed automatically.
+  const handleResizeVMove = useCallback((e: PointerEvent) => {
+    const rs = resizeVStart.current
+    if (rs === null) return
+    const newHeight = clampCardHeight(rs.startHeight + (rs.startY - e.clientY))
+    setCardHeight(newHeight)
+    if (rs.startTop !== null) {
+      const newTop = rs.startTop + rs.startHeight - newHeight
+      setPosition((pos) => ({ top: newTop, left: pos?.left ?? 0 }))
+    }
+  }, [])
+
+  const handleResizeVUp = useCallback(() => {
+    resizeVStart.current = null
+    setResizing(false)
+    window.removeEventListener('pointermove', handleResizeVMove)
+    window.removeEventListener('pointerup', handleResizeVUp)
+    setCardHeight((h) => {
+      if (h !== null) saveCardHeight(h)
+      return h
+    })
+    setPosition((pos) => {
+      if (pos !== null) savePosition(pos)
+      return pos
+    })
+  }, [handleResizeVMove])
+
+  const handleResizeVPointerDown = useCallback(
+    (e: ReactPointerEvent<HTMLDivElement>) => {
+      e.stopPropagation()
+      if (cardRef.current === null) return
+      resizeVStart.current = {
+        startY: e.clientY,
+        startHeight: cardRef.current.offsetHeight,
+        startTop: position?.top ?? null,
+      }
+      setResizing(true)
+      window.addEventListener('pointermove', handleResizeVMove)
+      window.addEventListener('pointerup', handleResizeVUp)
+    },
+    [position, handleResizeVMove, handleResizeVUp],
+  )
+
+  // Double-click the vertical handle to reset to auto (content-driven) height.
+  const handleResizeVDoubleClick = useCallback(() => {
+    clearCardHeight()
+    setCardHeight(null)
+  }, [])
+
   // Drag listeners are only ever attached while a drag is in progress
   // (added in handleHeaderPointerDown), but detach them on unmount too in
   // case the component goes away mid-drag.
@@ -392,8 +492,10 @@ export function KenariDock() {
       window.removeEventListener('pointerup', handlePointerUp)
       window.removeEventListener('pointermove', handleResizeMove)
       window.removeEventListener('pointerup', handleResizeUp)
+      window.removeEventListener('pointermove', handleResizeVMove)
+      window.removeEventListener('pointerup', handleResizeVUp)
     }
-  }, [handlePointerMove, handlePointerUp, handleResizeMove, handleResizeUp])
+  }, [handlePointerMove, handlePointerUp, handleResizeMove, handleResizeUp, handleResizeVMove, handleResizeVUp])
 
   const load = useCallback((force: boolean): void => {
     const now = Date.now()
@@ -503,6 +605,7 @@ export function KenariDock() {
       ? { top: position.top, left: position.left }
       : { bottom: DEFAULT_CARD_BOTTOM, right: DEFAULT_CARD_RIGHT }),
     width: cardWidth,
+    ...(cardHeight !== null ? { height: cardHeight } : {}),
     zIndex: 50,
     display: 'flex',
     flexDirection: 'column',
@@ -640,6 +743,22 @@ export function KenariDock() {
           touchAction: 'none',
         }}
       />
+      <div
+        data-testid="kenari-resize-v"
+        title="Resize card height — double-click to reset auto height"
+        aria-label="Resize card height"
+        onPointerDown={handleResizeVPointerDown}
+        onDoubleClick={handleResizeVDoubleClick}
+        style={{
+          position: 'absolute',
+          top: 0,
+          left: 0,
+          right: 0,
+          height: 8,
+          cursor: 'ns-resize',
+          touchAction: 'none',
+        }}
+      />
       <div style={headerStyle} data-testid="kenari-drag-handle" onPointerDown={handleHeaderPointerDown}>
         <button
           type="button"
@@ -699,7 +818,17 @@ export function KenariDock() {
         </button>
       </div>
       {!collapsed && (
-        <div id="kenari-usage-body" style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+        <div
+          id="kenari-usage-body"
+          style={{
+            display: 'flex',
+            flexDirection: 'column',
+            gap: 10,
+            ...(cardHeight !== null
+              ? { maxHeight: Math.max(0, cardHeight - CARD_CHROME_RESERVE), overflowY: 'auto', minHeight: 0 }
+              : {}),
+          }}
+        >
           {snap !== null && (
             <div data-testid="kenari-usage-line" style={{ display: 'flex', flexDirection: 'column', gap: 0 }}>
               {(snap.payload.week !== null || snap.payload.month !== null) && (
