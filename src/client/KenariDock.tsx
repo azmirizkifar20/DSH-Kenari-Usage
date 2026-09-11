@@ -10,15 +10,15 @@
  * `pollIntervalMs` (host-provided, default 60000) it refetches the
  * same-origin `/dsh-kenari-usage` route.
  *
- * Layout is a compact usage card rendered as a FLOATING surface fixed at the
- * bottom-right of the viewport (level with the composer input): a header row
- * ("◷ Usage ⌄" left, muted "Left" label + Refresh right) over two data rows
- * (Week / Month), each showing the reset date on the left and the REMAINING
- * quota as a whole percent on the right.
+ * Layout is a compact card rendered as a FLOATING surface fixed over the
+ * left sidebar, just above the Settings menu item: a header row
+ * ("◷ Kenari Usage ⌄" left, Refresh right) over two meter rows (Week /
+ * Month), each showing the reset date + USED quota as a whole percent, plus
+ * a thin usage bar underneath.
  *
  * Display values are derived client-side from the host payload's raw numbers
- * (`used_frac` → remaining %, `serverTime + resets_in_secs` → reset date):
- * the browser cannot import `../format.ts` because host and client bundle
+ * (`used_frac` → used %, `serverTime + resets_in_secs` → reset date): the
+ * browser cannot import `../format.ts` because host and client bundle
  * separately.
  */
 
@@ -34,9 +34,24 @@ const DISPLAY_TICK_MS = 1000
 /** Auto-poll cadence (ms) when the host payload omits pollIntervalMs. */
 const DEFAULT_POLL_INTERVAL_MS = 60000
 
-/** Remaining quota as a whole percent string (e.g. used 0.894 → "11%"). */
-function remainingPct(usedFrac: number): string {
-  return `${Math.max(0, Math.round((1 - usedFrac) * 100))}%`
+/** Fixed-position tuning for docking above the sidebar's Settings row — the
+ *  host has no real sidebar slot, so this overlay is placed by eye; adjust
+ *  here if the host's sidebar width/footer height ever changes. */
+const SIDEBAR_CARD_LEFT = 12
+const SIDEBAR_CARD_BOTTOM = 64
+const SIDEBAR_CARD_WIDTH = 216
+
+const METER_FILL_COLOR = '#e3a53d'
+const METER_TRACK_COLOR = 'rgba(227,165,61,0.18)'
+
+/** Used quota as a fraction clamped to [0, 1] (matches format.ts's displayFrac). */
+function usedFraction(usedFrac: number): number {
+  return Math.min(1, Math.max(0, usedFrac))
+}
+
+/** Used quota as a whole percent string (e.g. used 0.894 → "89%"). */
+function usedPct(usedFrac: number): string {
+  return `${Math.round(usedFraction(usedFrac) * 100)}%`
 }
 
 /** Format a reset moment like "Fri, Sep 11, 1:20 AM" (en-US, host locale agnostic). */
@@ -58,12 +73,12 @@ interface DockSnapshot {
 }
 
 /**
- * The composer dock card: a floating surface pinned bottom-right of the
- * viewport (fixed, clear of the composer input), rendering the
- * `◷ Usage ⌄ … Left ⟳` header over Week/Month rows
- * (`Fri, Sep 11, 1:20 AM … 21%`). Themed via the host's CSS vars
- * (`--dsw-alias-bg-base` / `--dsw-alias-border-l1`) with neutral fallbacks,
- * so it reads as a floating card over chat content in both light and dark.
+ * The composer dock card: a floating surface pinned above the sidebar's
+ * Settings row (fixed, bottom-left), rendering the
+ * `◷ Kenari Usage ⌄ … ⟳` header over Week/Month meter rows
+ * (`Fri, Sep 11, 1:20 AM … 89%` + a usage bar). Themed via the host's CSS
+ * vars (`--dsw-alias-bg-base` / `--dsw-alias-border-l1`) with neutral
+ * fallbacks, so it reads as a floating card in both light and dark.
  */
 export function KenariDock() {
   const [snapshot, setSnapshot] = useState<DockSnapshot | null>(null)
@@ -150,20 +165,21 @@ export function KenariDock() {
 
   const cardStyle: CSSProperties = {
     position: 'fixed',
-    bottom: 100,
-    right: 24,
+    left: SIDEBAR_CARD_LEFT,
+    bottom: SIDEBAR_CARD_BOTTOM,
+    width: SIDEBAR_CARD_WIDTH,
     zIndex: 50,
     display: 'flex',
     flexDirection: 'column',
-    maxWidth: 320,
+    gap: 12,
     background: 'var(--dsw-alias-bg-base, #1e1e1e)',
     border: '1px solid var(--dsw-alias-border-l1, rgba(255,255,255,0.12))',
     borderRadius: 10,
-    padding: '8px 12px',
+    padding: '10px 12px 12px',
     boxShadow: '0 4px 16px rgba(0,0,0,0.35)',
     color: 'inherit',
     fontSize: '0.85em',
-    lineHeight: 1.5,
+    lineHeight: 1.4,
     opacity: dimmed ? 0.5 : 1,
   }
 
@@ -189,18 +205,38 @@ export function KenariDock() {
     opacity: refreshing ? 0.5 : 1,
   }
 
+  const trackStyle: CSSProperties = {
+    height: 4,
+    borderRadius: 3,
+    marginTop: 6,
+    background: METER_TRACK_COLOR,
+    overflow: 'hidden',
+  }
+
   /** Reset date for one window, ticked forward from fetchedAt for display. */
   const resetDate = (serverTime: number, win: DockWindow, fetchedAt: number): string =>
     formatResetDate(new Date(serverTime + win.resets_in_secs * 1000 - elapsedSecs(fetchedAt) * 1000))
 
-  /** One data row: label + reset date left, remaining percent right. */
+  /** One meter row: label + reset date on top with the used percent, a usage bar underneath. */
   const usageRow = (label: string, serverTime: number, win: DockWindow, fetchedAt: number) => (
-    <div style={rowStyle}>
-      <span>
-        {`${label} `}
-        <span style={mutedStyle}>{resetDate(serverTime, win, fetchedAt)}</span>
-      </span>
-      <strong>{remainingPct(win.used_frac)}</strong>
+    <div>
+      <div style={rowStyle}>
+        <span>
+          {`${label} `}
+          <span style={mutedStyle}>{resetDate(serverTime, win, fetchedAt)}</span>
+        </span>
+        <strong>{usedPct(win.used_frac)}</strong>
+      </div>
+      <div style={trackStyle}>
+        <div
+          style={{
+            height: '100%',
+            borderRadius: 3,
+            width: `${usedFraction(win.used_frac) * 100}%`,
+            background: METER_FILL_COLOR,
+          }}
+        />
+      </div>
     </div>
   )
 
@@ -209,28 +245,25 @@ export function KenariDock() {
       <div style={rowStyle}>
         <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
           <span aria-hidden="true">◷</span>
-          <strong>Usage</strong>
+          <strong>Kenari Usage</strong>
           <span style={{ ...mutedStyle, fontSize: '0.8em' }} aria-hidden="true">
             ⌄
           </span>
         </span>
-        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
-          <span style={mutedStyle}>Left</span>
-          <button
-            type="button"
-            style={buttonStyle}
-            data-testid="kenari-refresh"
-            aria-label="Refresh"
-            title="Refresh"
-            disabled={refreshing}
-            onClick={() => load(false)}
-          >
-            ⟳
-          </button>
-        </span>
+        <button
+          type="button"
+          style={buttonStyle}
+          data-testid="kenari-refresh"
+          aria-label="Refresh"
+          title="Refresh"
+          disabled={refreshing}
+          onClick={() => load(false)}
+        >
+          ⟳
+        </button>
       </div>
       {snap !== null && (
-        <div data-testid="kenari-usage-line">
+        <div data-testid="kenari-usage-line" style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
           {usageRow('Week', snap.payload.serverTime, snap.payload.week, snap.fetchedAt)}
           {usageRow('Month', snap.payload.serverTime, snap.payload.month, snap.fetchedAt)}
         </div>

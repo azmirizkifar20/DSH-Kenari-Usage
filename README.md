@@ -3,7 +3,7 @@
 A DeepSeek Harness plugin that shows **Kenari provider usage** — weekly and monthly consumption as percentages plus reset countdowns.
 
 -   📊 **Weekly + monthly usage** — reads the Kenari `/subscription` endpoint (`window_week` / `window_month`): `used_frac` rendered as a percentage and `resets_in_secs` as a human countdown
--   📌 **Floating usage card** — a usage card (`◷ Usage` + `Left`, rows Week/Month with reset date + **remaining** % + Refresh) floating bottom-right over the chat, level with the composer, auto-polling every 60s, no prompt needed
+-   📌 **Floating usage card** — a Kenari Usage card (`◷ Kenari Usage`, rows Week/Month with reset date + **used** % + a usage bar + Refresh) floating above the sidebar's Settings row, auto-polling every 60s, no prompt needed
 -   🛠️ **Model tool** — `kenari_usage`, so the agent can query usage on demand
 -   🔑 **Session cookie auth** — sends your `kn_session` value (configured in the profile patch) as an explicit `Cookie:` header; nothing else leaves your machine
 -   ✅ **Tests** — vitest unit tests (format/parse) + mocked tool integration tests
@@ -59,7 +59,7 @@ When the cookie expires (HTTP 401), open Kenari in the browser to refresh the se
 
 ## Web UI
 
--   **Floating usage card** — `◷ Usage … Left ⟳` header over `Week Fri, Sep 11, 1:20 AM … 11%` / `Month … … 78%` rows (remaining quota, whole percent), fixed bottom-right over the chat area level with the composer input (registered in the `conversation.session.header.utilities` slot, surfaced as a floating card), no prompt needed. Auto-polls the same-origin `GET /dsh-kenari-usage` every 60s; manual Refresh (disabled while fetching, debounced 1000ms, aborts the prior request) forces `?refresh=1`.
+-   **Floating usage card** — `◷ Kenari Usage ⌄ … ⟳` header over `Week Fri, Sep 11, 1:20 AM … 89%` / `Month … … 79%` meter rows (used quota, whole percent, plus a usage bar), fixed above the sidebar's Settings row (registered in the `conversation.session.header.utilities` slot, surfaced as a floating card positioned by CSS since the host has no dedicated sidebar slot), no prompt needed. Auto-polls the same-origin `GET /dsh-kenari-usage` every 60s; manual Refresh (disabled while fetching, debounced 1000ms, aborts the prior request) forces `?refresh=1`.
 -   **Expired session** — on 401 the dock shows a refresh-cookie error card, keeps the last known data dimmed, and offers Retry (no retry loop).
 -   **Countdown display** — computed once per fetch and ticked locally each second for display only; the tool-call card (`presentCall`/`presentResult`) still works via prompt as before.
 
