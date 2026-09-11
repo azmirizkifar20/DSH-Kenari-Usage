@@ -11,10 +11,10 @@
  * same-origin `/dsh-kenari-usage` route.
  *
  * Layout is a compact card rendered as a FLOATING surface fixed over the
- * left sidebar, just above the Settings menu item: a header row
- * ("◷ Kenari Usage ⌄" left, Refresh right) over two meter rows (Week /
- * Month), each showing the reset date + USED quota as a whole percent, plus
- * a thin usage bar underneath.
+ * left sidebar, just above the Settings menu item: a header row (title +
+ * chevron toggle left, Refresh right) over two meter rows (Week / Month),
+ * each showing the reset date + USED quota as a whole percent, plus a thin
+ * usage bar underneath. The title button collapses/expands the body.
  *
  * Display values are derived client-side from the host payload's raw numbers
  * (`used_frac` → used %, `serverTime + resets_in_secs` → reset date): the
@@ -74,16 +74,18 @@ interface DockSnapshot {
 
 /**
  * The composer dock card: a floating surface pinned above the sidebar's
- * Settings row (fixed, bottom-left), rendering the
+ * Settings row (fixed, bottom-left), rendering a collapsible
  * `◷ Kenari Usage ⌄ … ⟳` header over Week/Month meter rows
  * (`Fri, Sep 11, 1:20 AM … 89%` + a usage bar). Themed via the host's CSS
- * vars (`--dsw-alias-bg-base` / `--dsw-alias-border-l1`) with neutral
- * fallbacks, so it reads as a floating card in both light and dark.
+ * vars (`--dsw-alias-bg-base` / `--dsw-alias-border-l1`) plus `color:
+ * inherit` for all text, so it tracks the host's light/dark theme with no
+ * hardcoded foreground colors.
  */
 export function KenariDock() {
   const [snapshot, setSnapshot] = useState<DockSnapshot | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [refreshing, setRefreshing] = useState(false)
+  const [collapsed, setCollapsed] = useState(false)
   const [pollIntervalMs, setPollIntervalMs] = useState(DEFAULT_POLL_INTERVAL_MS)
   // Bumped by the display timer so the reset dates re-render each second.
   const [, setTick] = useState(0)
@@ -243,13 +245,32 @@ export function KenariDock() {
   return (
     <div style={cardStyle} data-testid="kenari-dock">
       <div style={rowStyle}>
-        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+        <button
+          type="button"
+          style={{ ...buttonStyle, display: 'inline-flex', alignItems: 'center', gap: 4, cursor: 'pointer' }}
+          data-testid="kenari-toggle"
+          aria-expanded={!collapsed}
+          aria-controls="kenari-usage-body"
+          title={collapsed ? 'Expand' : 'Collapse'}
+          onClick={() => setCollapsed((c) => !c)}
+        >
           <span aria-hidden="true">◷</span>
           <strong>Kenari Usage</strong>
-          <span style={{ ...mutedStyle, fontSize: '0.8em' }} aria-hidden="true">
-            ⌄
-          </span>
-        </span>
+          <svg
+            width="10"
+            height="10"
+            viewBox="0 0 12 12"
+            fill="none"
+            aria-hidden="true"
+            style={{
+              opacity: 0.55,
+              transform: collapsed ? 'rotate(0deg)' : 'rotate(180deg)',
+              transition: 'transform 150ms ease',
+            }}
+          >
+            <path d="M2.5 4.5L6 8L9.5 4.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+          </svg>
+        </button>
         <button
           type="button"
           style={buttonStyle}
@@ -262,23 +283,27 @@ export function KenariDock() {
           ⟳
         </button>
       </div>
-      {snap !== null && (
-        <div data-testid="kenari-usage-line" style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-          {usageRow('Week', snap.payload.serverTime, snap.payload.week, snap.fetchedAt)}
-          {usageRow('Month', snap.payload.serverTime, snap.payload.month, snap.fetchedAt)}
-        </div>
-      )}
-      {error !== null && (
-        <div style={{ ...rowStyle, opacity: 0.8 }} data-testid="kenari-error" role="alert">
-          <span>{`Kenari usage: ${error}`}</span>
-          <button
-            type="button"
-            style={buttonStyle}
-            data-testid="kenari-retry"
-            onClick={() => load(true)}
-          >
-            Retry
-          </button>
+      {!collapsed && (
+        <div id="kenari-usage-body" style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+          {snap !== null && (
+            <div data-testid="kenari-usage-line" style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+              {usageRow('Week', snap.payload.serverTime, snap.payload.week, snap.fetchedAt)}
+              {usageRow('Month', snap.payload.serverTime, snap.payload.month, snap.fetchedAt)}
+            </div>
+          )}
+          {error !== null && (
+            <div style={{ ...rowStyle, opacity: 0.8 }} data-testid="kenari-error" role="alert">
+              <span>{`Kenari usage: ${error}`}</span>
+              <button
+                type="button"
+                style={buttonStyle}
+                data-testid="kenari-retry"
+                onClick={() => load(true)}
+              >
+                Retry
+              </button>
+            </div>
+          )}
         </div>
       )}
     </div>
