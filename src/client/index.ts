@@ -49,10 +49,7 @@ export interface KenariClientContext {
  * @param ctx - the client cordis context (slots service).
  */
 export function apply(ctx: KenariClientContext): void {
-  ensureLayoutLane()
   ctx.slots.inject('conversation.session.header.utilities', () => {
-    // Best-effort idempotent re-inject: if the host cleared <head>, restore it.
-    ensureLayoutLaneQuiet()
     const disposeDock = ctx.slots.register(
       {
         name: 'conversation.session.header.utilities',
@@ -64,53 +61,6 @@ export function apply(ctx: KenariClientContext): void {
     )
     return () => {
       disposeDock()
-      removeLayoutLane()
     }
   })
-}
-
-// Right-lane width override: supersedes the host width-drag while mounted
-// (accepted tradeoff — the !important custom property wins over drag state).
-const LAYOUT_CSS =
-  '@media (min-width: 1150px) { *, :root { --dsh-chat-user-width: max(480px, min(720px, calc(100vw - 640px))) !important; } }'
-
-function ensureLayoutLane(): void {
-  console.info('[kenari-usage] layout lane inject: attempting')
-  try {
-    if (typeof document === 'undefined') {
-      throw new Error('no document')
-    }
-    if (document.querySelector('style[data-kenari-layout]')) {
-      console.info('[kenari-usage] layout lane active: style tag present')
-      return
-    }
-    const style = document.createElement('style')
-    style.setAttribute('data-kenari-layout', '1')
-    style.textContent = LAYOUT_CSS
-    ;(document.head ?? document.documentElement).appendChild(style)
-    console.info('[kenari-usage] layout lane active: style tag present')
-  } catch (err) {
-    console.warn('[kenari-usage] layout lane inactive:', err instanceof Error ? err.message : err)
-  }
-}
-
-function ensureLayoutLaneQuiet(): void {
-  try {
-    if (typeof document === 'undefined') return
-    if (document.querySelector('style[data-kenari-layout]')) return
-    const style = document.createElement('style')
-    style.setAttribute('data-kenari-layout', '1')
-    style.textContent = LAYOUT_CSS
-    ;(document.head ?? document.documentElement).appendChild(style)
-  } catch {
-    // Best-effort only — apply() already reported the lane state.
-  }
-}
-
-function removeLayoutLane(): void {
-  try {
-    document.querySelector('style[data-kenari-layout]')?.remove()
-  } catch {
-    // Throw-safe teardown.
-  }
 }

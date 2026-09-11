@@ -37,8 +37,10 @@ const DISPLAY_TICK_MS = 1000
 /** Auto-poll cadence (ms) when the host payload omits pollIntervalMs. */
 const DEFAULT_POLL_INTERVAL_MS = 60000
 
-/** Card width (px) — fixed regardless of where it's dragged. */
+/** Card width (px) — default/fallback; user-resizable 200–520 via left-edge handle. */
 const CARD_WIDTH = 270
+const CARD_WIDTH_MIN = 200
+const CARD_WIDTH_MAX = 520
 
 /** Default position (bottom-right over the chat, level with the composer)
  *  before the user has ever dragged the card. */
@@ -47,6 +49,9 @@ const DEFAULT_CARD_RIGHT = 24
 
 /** localStorage key for the user-dragged position. */
 const POSITION_STORAGE_KEY = 'kenari-usage-dock-position'
+
+/** localStorage key for the user-resized card width. */
+const WIDTH_STORAGE_KEY = 'kenari-usage-dock-width'
 
 const METER_FILL_COLOR = '#e3a53d'
 const METER_TRACK_COLOR = 'rgba(255,255,255,0.12)'
@@ -86,6 +91,29 @@ function savePosition(pos: DockPosition): void {
     window.localStorage.setItem(POSITION_STORAGE_KEY, JSON.stringify(pos))
   } catch {
     // Private-browsing/storage-disabled: dragging still works, just doesn't persist.
+  }
+}
+
+function clampCardWidth(n: number): number {
+  return Math.min(CARD_WIDTH_MAX, Math.max(CARD_WIDTH_MIN, Math.round(n)))
+}
+
+function loadCardWidth(): number {
+  try {
+    const raw = window.localStorage.getItem(WIDTH_STORAGE_KEY)
+    if (raw === null) return CARD_WIDTH
+    const parsed = Number(raw)
+    return Number.isFinite(parsed) ? clampCardWidth(parsed) : CARD_WIDTH
+  } catch {
+    return CARD_WIDTH
+  }
+}
+
+function saveCardWidth(width: number): void {
+  try {
+    window.localStorage.setItem(WIDTH_STORAGE_KEY, String(clampCardWidth(width)))
+  } catch {
+    // Private-browsing/storage-disabled: resizing still works, just doesn't persist.
   }
 }
 
@@ -156,6 +184,8 @@ export function KenariDock() {
   const [pollIntervalMs, setPollIntervalMs] = useState(DEFAULT_POLL_INTERVAL_MS)
   const [position, setPosition] = useState<DockPosition | null>(() => loadPosition())
   const [dragging, setDragging] = useState(false)
+  const [cardWidth, setCardWidth] = useState(() => loadCardWidth())
+  const [resizing, setResizing] = useState(false)
   // Bumped by the display timer so derived displays re-render each second.
   const [, setTick] = useState(0)
 
@@ -164,6 +194,7 @@ export function KenariDock() {
   const mounted = useRef(true)
   const cardRef = useRef<HTMLDivElement | null>(null)
   const dragOffset = useRef<{ x: number; y: number } | null>(null)
+  const resizeStart = useRef<{ startX: number; startWidth: number } | null>(null)
 
   // Drag-to-reposition: pointerdown on the header starts tracking; move/up
   // listen on window so the drag keeps working even if the pointer leaves
@@ -205,6 +236,34 @@ export function KenariDock() {
     [handlePointerMove, handlePointerUp],
   )
 
+  const handleResizeMove = useCallback((e: PointerEvent) => {
+    if (resizeStart.current === null) return
+    const delta = resizeStart.current.startX - e.clientX
+    setCardWidth(clampCardWidth(resizeStart.current.startWidth + delta))
+  }, [])
+
+  const handleResizeUp = useCallback(() => {
+    resizeStart.current = null
+    setResizing(false)
+    window.removeEventListener('pointermove', handleResizeMove)
+    window.removeEventListener('pointerup', handleResizeUp)
+    setCardWidth((w) => {
+      saveCardWidth(w)
+      return w
+    })
+  }, [handleResizeMove])
+
+  const handleResizePointerDown = useCallback(
+    (e: ReactPointerEvent<HTMLDivElement>) => {
+      e.stopPropagation()
+      resizeStart.current = { startX: e.clientX, startWidth: cardWidth }
+      setResizing(true)
+      window.addEventListener('pointermove', handleResizeMove)
+      window.addEventListener('pointerup', handleResizeUp)
+    },
+    [cardWidth, handleResizeMove, handleResizeUp],
+  )
+
   // Drag listeners are only ever attached while a drag is in progress
   // (added in handleHeaderPointerDown), but detach them on unmount too in
   // case the component goes away mid-drag.
@@ -212,8 +271,10 @@ export function KenariDock() {
     return () => {
       window.removeEventListener('pointermove', handlePointerMove)
       window.removeEventListener('pointerup', handlePointerUp)
+      window.removeEventListener('pointermove', handleResizeMove)
+      window.removeEventListener('pointerup', handleResizeUp)
     }
-  }, [handlePointerMove, handlePointerUp])
+  }, [handlePointerMove, handlePointerUp, handleResizeMove, handleResizeUp])
 
   const load = useCallback((force: boolean): void => {
     const now = Date.now()
@@ -293,7 +354,7 @@ export function KenariDock() {
     ...(position !== null
       ? { top: position.top, left: position.left }
       : { bottom: DEFAULT_CARD_BOTTOM, right: DEFAULT_CARD_RIGHT }),
-    width: CARD_WIDTH,
+    width: cardWidth,
     zIndex: 50,
     display: 'flex',
     flexDirection: 'column',
@@ -307,7 +368,7 @@ export function KenariDock() {
     fontSize: '0.85em',
     lineHeight: 1.4,
     opacity: dimmed ? 0.5 : 1,
-    userSelect: dragging ? 'none' : undefined,
+    userSelect: dragging || resizing ? 'none' : undefined,
   }
 
   const headerStyle: CSSProperties = {
@@ -416,6 +477,21 @@ export function KenariDock() {
 
   return (
     <div ref={cardRef} style={cardStyle} data-testid="kenari-dock">
+      <div
+        data-testid="kenari-resize"
+        title="Resize card width"
+        aria-label="Resize card width"
+        onPointerDown={handleResizePointerDown}
+        style={{
+          position: 'absolute',
+          top: 0,
+          bottom: 0,
+          left: 0,
+          width: 8,
+          cursor: 'ew-resize',
+          touchAction: 'none',
+        }}
+      />
       <div style={headerStyle} data-testid="kenari-drag-handle" onPointerDown={handleHeaderPointerDown}>
         <button
           type="button"
