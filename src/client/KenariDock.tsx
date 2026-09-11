@@ -15,9 +15,11 @@
  * localStorage): a header row (`k` glyph + Kenari + plan name, chevron
  * toggle, Refresh; drag anywhere else on the row) over three sections —
  * KUOTA PAKET (weekly/monthly quota rows with used/sisa rupiah and a thin
- * bar), RINGKASAN (total request/token stat boxes) and PENGGUNAAN 30 HARI
- * (scrollable per-model list). The chevron button collapses/expands the
- * body.
+ * bar), RINGKASAN (total request/token stat boxes), PENGGUNAAN 30 HARI
+ * (scrollable per-model list) and PENGGUNAAN HARI INI (today usage derived
+ * client-side by diffing the 30-day payload against a start-of-day
+ * localStorage baseline snapshot — the server has no daily endpoint). The
+ * chevron button collapses/expands the body.
  *
  * Display values are derived client-side from the host payload's raw numbers
  * (`used_rp` / `remaining_rp` → bar width, token counts → compact strings):
@@ -117,6 +119,108 @@ function saveCardWidth(width: number): void {
   }
 }
 
+/** localStorage key for the start-of-today usage baseline (snapshot diff). */
+const DAY_BASELINE_STORAGE_KEY = 'kenari-usage-day-baseline'
+
+/** One model's baseline counters at the first fetch of the local day. */
+interface DayBaselinePerModel {
+  requests: number
+  tokens: number
+}
+
+/**
+ * Start-of-day usage baseline: the 30-day aggregate as first seen today.
+ * Today usage = current 30-day payload − this snapshot (the server exposes
+ * no daily endpoint, so "today" is derived client-side by snapshot diffing).
+ */
+interface DayBaseline {
+  /** Local calendar day the snapshot was taken on, `YYYY-MM-DD`. */
+  date: string
+  total_requests: number
+  total_tokens: number
+  perModel: Record<string, DayBaselinePerModel>
+}
+
+/** Today usage derived from the payload minus the baseline (negatives clamped to 0). */
+interface TodayUsage {
+  requests: number
+  tokens: number
+  /** Models with today requests > 0, sorted desc by today tokens. */
+  models: Array<{ model: string; requests: number; tokens: number }>
+}
+
+/** Local calendar day stamp `YYYY-MM-DD` (local time, not UTC). */
+function localDayStamp(d: Date): string {
+  const month = `${d.getMonth() + 1}`.padStart(2, '0')
+  const day = `${d.getDate()}`.padStart(2, '0')
+  return `${d.getFullYear()}-${month}-${day}`
+}
+
+function isDayBaseline(value: unknown): value is DayBaseline {
+  if (typeof value !== 'object' || value === null) return false
+  const b = value as DayBaseline
+  return (
+    typeof b.date === 'string' &&
+    typeof b.total_requests === 'number' &&
+    typeof b.total_tokens === 'number' &&
+    typeof b.perModel === 'object' &&
+    b.perModel !== null
+  )
+}
+
+function loadDayBaseline(): DayBaseline | null {
+  try {
+    const raw = window.localStorage.getItem(DAY_BASELINE_STORAGE_KEY)
+    if (raw === null) return null
+    const parsed: unknown = JSON.parse(raw)
+    return isDayBaseline(parsed) ? parsed : null
+  } catch {
+    return null
+  }
+}
+
+function saveDayBaseline(baseline: DayBaseline): void {
+  try {
+    window.localStorage.setItem(DAY_BASELINE_STORAGE_KEY, JSON.stringify(baseline))
+  } catch {
+    // Private-browsing/storage-disabled: today usage still renders, just
+    // resets on every reload instead of persisting across the day.
+  }
+}
+
+/** Snapshot the current 30-day payload as the baseline for `date`. */
+function baselineFromUsage(usage: DockUsage, date: string): DayBaseline {
+  const perModel: Record<string, DayBaselinePerModel> = {}
+  for (const m of usage.models) {
+    perModel[m.model] = { requests: m.requests, tokens: m.input_tok + m.output_tok }
+  }
+  return { date, total_requests: usage.total_requests, total_tokens: usage.total_tokens, perModel }
+}
+
+/**
+ * Diff the current 30-day payload against the baseline: today = max(0,
+ * current − baseline) per totals and per model (tokens = input + output).
+ * Negatives are upstream corrections (backfills, window shifts) — clamped
+ * to 0 rather than shown as negative usage.
+ */
+function diffToday(usage: DockUsage, baseline: DayBaseline): TodayUsage {
+  const clamp0 = (n: number): number => Math.max(0, n)
+  const models: TodayUsage['models'] = []
+  for (const m of usage.models) {
+    const base = baseline.perModel[m.model] ?? { requests: 0, tokens: 0 }
+    const requests = clamp0(m.requests - base.requests)
+    if (requests > 0) {
+      models.push({ model: m.model, requests, tokens: clamp0(m.input_tok + m.output_tok - base.tokens) })
+    }
+  }
+  models.sort((a, b) => b.tokens - a.tokens)
+  return {
+    requests: clamp0(usage.total_requests - baseline.total_requests),
+    tokens: clamp0(usage.total_tokens - baseline.total_tokens),
+    models,
+  }
+}
+
 /** Raw rupiah as `Rp 143239` (plain integer, no separators). */
 function formatRp(n: number): string {
   return `Rp ${n}`
@@ -186,6 +290,7 @@ export function KenariDock() {
   const [dragging, setDragging] = useState(false)
   const [cardWidth, setCardWidth] = useState(() => loadCardWidth())
   const [resizing, setResizing] = useState(false)
+  const [dayBaseline, setDayBaseline] = useState<DayBaseline | null>(() => loadDayBaseline())
   // Bumped by the display timer so derived displays re-render each second.
   const [, setTick] = useState(0)
 
@@ -358,10 +463,39 @@ export function KenariDock() {
     }
   }, [])
 
+  // Today-usage baseline: after each successful fetch lands in state, keep
+  // the start-of-day snapshot current. First fetch of a new local day (or a
+  // missing/corrupt baseline) overwrites the stored snapshot with the
+  // current payload — the diff against a stale day is never rendered. The
+  // baseline is only persisted from ok:true payloads (this effect only runs
+  // when a snapshot exists).
+  useEffect(() => {
+    const usage = snapshot?.payload.usage
+    if (usage === undefined || usage === null) return
+    const today = localDayStamp(new Date())
+    const stored = loadDayBaseline()
+    if (stored !== null && stored.date === today) {
+      setDayBaseline(stored)
+      return
+    }
+    const baseline = baselineFromUsage(usage, today)
+    saveDayBaseline(baseline)
+    setDayBaseline(baseline)
+  }, [snapshot])
+
   const snap = snapshot
   const dimmed = error !== null && snap !== null
   const plan = snap?.payload.plan ?? null
   const usage = snap?.payload.usage ?? null
+  // Today usage = current 30-day payload − start-of-day baseline. Hidden
+  // until both a payload and a same-day baseline exist; the first fetch of
+  // a new day installs the baseline so the diff starts at 0, never at a
+  // stale day's full 30-day total. Baseline is null mid-day only if
+  // storage is unavailable — today usage stays hidden rather than lying.
+  const today =
+    usage !== null && dayBaseline !== null && dayBaseline.date === localDayStamp(new Date())
+      ? diffToday(usage, dayBaseline)
+      : null
 
   const cardStyle: CSSProperties = {
     position: 'fixed',
@@ -603,6 +737,38 @@ export function KenariDock() {
                         </span>
                       </div>
                     ))}
+                  </div>
+                </div>
+              )}
+              {usage !== null && today !== null && (
+                <div data-testid="kenari-today" style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                  <span style={sectionLabelBlockStyle}>Penggunaan Hari Ini</span>
+                  {today.models.length > 0 ? (
+                    <>
+                      <div style={{ ...mutedStyle, fontSize: '0.8em' }}>
+                        {`${formatCompact(today.requests)} req · ${formatCompact(today.tokens)} tok hari ini`}
+                      </div>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                        {today.models.map((m) => (
+                          <div key={m.model} style={modelRowStyle}>
+                            <span style={{ ...mutedStyle, overflow: 'hidden', textOverflow: 'ellipsis' }}>{m.model}</span>
+                            <span style={{ whiteSpace: 'nowrap', fontVariantNumeric: 'tabular-nums' }}>
+                              <strong>{`${m.requests}x`}</strong>
+                              {` ${formatCompact(m.tokens)} tok`}
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    </>
+                  ) : (
+                    <div data-testid="kenari-today-empty" style={{ ...modelRowStyle, ...mutedStyle }}>
+                      <span>Belum ada pemakaian hari ini</span>
+                    </div>
+                  )}
+                  {/* Honest limitation: the baseline starts at the first fetch of the
+                      day, so usage before the card was first opened is not counted. */}
+                  <div style={{ ...mutedStyle, fontSize: '0.72em', marginTop: 2 }}>
+                    dihitung sejak card pertama dibuka hari ini — pemakaian sebelum itu tidak tercatat
                   </div>
                 </div>
               )}
