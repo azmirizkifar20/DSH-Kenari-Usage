@@ -5,38 +5,40 @@
  * UX mirrors the framework-free panel (`src/panel.ts`): Refresh is disabled
  * while fetching, rapid clicks collapse (1000ms debounce + abort-prior),
  * failures show an error card with Retry while the last data dims, and the
- * reset display is recomputed from `fetchedAt` by a 1s display timer that
- * never refetches. Unlike the panel, the dock ALSO auto-polls: every
- * `pollIntervalMs` (host-provided, default 60000) it refetches the
- * same-origin `/dsh-kenari-usage` route.
+ * display is recomputed on a 1s display timer that never refetches. Unlike
+ * the panel, the dock ALSO auto-polls: every `pollIntervalMs`
+ * (host-provided, default 60000) it refetches the same-origin
+ * `/dsh-kenari-usage` route.
  *
  * Layout is a compact card rendered as a FLOATING surface over the chat
  * body, draggable by its header to anywhere on screen (position persists in
- * localStorage): a header row (title + chevron toggle left, Refresh right,
- * drag anywhere else on the row) over two meter rows (Week / Month), each
- * showing the reset date + USED quota as a whole percent, plus a thin usage
- * bar underneath. The chevron button collapses/expands the body.
+ * localStorage): a header row (`k` glyph + Kenari + plan name, chevron
+ * toggle, Refresh; drag anywhere else on the row) over three sections —
+ * KUOTA PAKET (weekly/monthly quota rows with used/sisa rupiah and a thin
+ * bar), RINGKASAN (total request/token stat boxes) and PENGGUNAAN 30 HARI
+ * (scrollable per-model list). The chevron button collapses/expands the
+ * body.
  *
  * Display values are derived client-side from the host payload's raw numbers
- * (`used_frac` → used %, `serverTime + resets_in_secs` → reset date): the
- * browser cannot import `../format.ts` because host and client bundle
+ * (`used_rp` / `remaining_rp` → bar width, token counts → compact strings):
+ * the browser cannot import `../format.ts` because host and client bundle
  * separately.
  */
 
 import { useCallback, useEffect, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent } from 'react'
-import { fetchDock, type DockPayload, type DockWindow } from './api.js'
+import { fetchDock, type DockPayload, type DockUsage, type DockWindow } from './api.js'
 
 /** Minimum gap between non-forced loads (ms) — mirrors REFRESH_DEBOUNCE_MS in panel.ts. */
 const REFRESH_DEBOUNCE_MS = 1000
 
-/** Local display-tick cadence (ms) — updates reset-date freshness only, never fetches. */
+/** Local display-tick cadence (ms) — refreshes display only, never fetches. */
 const DISPLAY_TICK_MS = 1000
 
 /** Auto-poll cadence (ms) when the host payload omits pollIntervalMs. */
 const DEFAULT_POLL_INTERVAL_MS = 60000
 
 /** Card width (px) — fixed regardless of where it's dragged. */
-const CARD_WIDTH = 230
+const CARD_WIDTH = 260
 
 /** Default position (bottom-right over the chat, level with the composer)
  *  before the user has ever dragged the card. */
@@ -47,7 +49,11 @@ const DEFAULT_CARD_RIGHT = 24
 const POSITION_STORAGE_KEY = 'kenari-usage-dock-position'
 
 const METER_FILL_COLOR = '#e3a53d'
-const METER_TRACK_COLOR = 'rgba(227,165,61,0.18)'
+const METER_TRACK_COLOR = 'rgba(255,255,255,0.12)'
+const STAT_BOX_COLOR = 'rgba(255,255,255,0.06)'
+
+/** English month abbreviations for the UTC reset stamp (host locale agnostic). */
+const MONTHS_ABBR = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'] as const
 
 interface DockPosition {
   top: number
@@ -83,26 +89,48 @@ function savePosition(pos: DockPosition): void {
   }
 }
 
-/** Used quota as a fraction clamped to [0, 1] (matches format.ts's displayFrac). */
-function usedFraction(usedFrac: number): number {
-  return Math.min(1, Math.max(0, usedFrac))
+/** Raw rupiah as `Rp 143239` (plain integer, no separators). */
+function formatRp(n: number): string {
+  return `Rp ${n}`
 }
 
-/** Used quota as a whole percent string (e.g. used 0.894 → "89%"). */
-function usedPct(usedFrac: number): string {
-  return `${Math.round(usedFraction(usedFrac) * 100)}%`
+/** Fraction of the window consumed, clamped to [0, 1]. */
+function usedFrac(win: DockWindow): number {
+  const total = win.used_rp + win.remaining_rp
+  if (total <= 0) return 0
+  return Math.min(1, Math.max(0, win.used_rp / total))
 }
 
-/** Format a reset moment like "Fri, Sep 11, 1:20 AM" (en-US, host locale agnostic). */
-function formatResetDate(date: Date): string {
-  const day = date.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })
-  const time = date.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })
-  return `${day}, ${time}`
+/**
+ * Compact count format: >=1e9 → "1.84M", >=1e6 → "732.2jt", >=1e3 → "14.2rb",
+ * else the plain number. One decimal, trailing ".0" trimmed.
+ */
+function formatCompact(n: number): string {
+  const abs = Math.abs(n)
+  if (abs >= 1e9) return trimZero((n / 1e9).toFixed(1)) + 'M'
+  if (abs >= 1e6) return trimZero((n / 1e6).toFixed(1)) + 'jt'
+  if (abs >= 1e3) return trimZero((n / 1e3).toFixed(1)) + 'rb'
+  return `${n}`
 }
 
-/** Seconds elapsed since the fetch, floored (display decrement only). */
-function elapsedSecs(fetchedAt: number): number {
-  return Math.max(0, Math.floor((Date.now() - fetchedAt) / 1000))
+/** Drops a trailing ".0" from a one-decimal string ("14.0" → "14"). */
+function trimZero(s: string): string {
+  return s.endsWith('.0') ? s.slice(0, -2) : s
+}
+
+/**
+ * Format an ISO reset timestamp as `13 Sep 20:30` in UTC (fixed, not
+ * locale-derived, so the display matches the reference exactly). Returns the
+ * raw string when the timestamp is unparseable.
+ */
+function formatResetShort(iso: string): string {
+  const date = new Date(iso)
+  if (Number.isNaN(date.getTime())) return iso
+  const day = date.getUTCDate()
+  const month = MONTHS_ABBR[date.getUTCMonth()]
+  const hh = `${date.getUTCHours()}`.padStart(2, '0')
+  const mm = `${date.getUTCMinutes()}`.padStart(2, '0')
+  return `${day} ${month} ${hh}:${mm}`
 }
 
 /** One fetched payload plus the wall-clock moment it arrived. */
@@ -114,11 +142,11 @@ interface DockSnapshot {
 /**
  * The composer dock card: a floating surface over the chat body, draggable
  * by its header to anywhere on screen (position persists in localStorage),
- * rendering a collapsible `◷ Kenari Usage ⌄ … ⟳` header over Week/Month
- * meter rows (`Fri, Sep 11, 1:20 AM … 89%` + a usage bar). Themed via the
- * host's CSS vars (`--dsw-alias-bg-base` / `--dsw-alias-border-l1`) plus
- * `color: inherit` for all text, so it tracks the host's light/dark theme
- * with no hardcoded foreground colors.
+ * rendering a collapsible `k Kenari KREATOR ⌄ … ⟳` header over KUOTA PAKET /
+ * RINGKASAN / PENGGUNAAN 30 HARI sections. Themed via the host's CSS vars
+ * (`--dsw-alias-bg-base` / `--dsw-alias-border-l1`) plus `color: inherit`
+ * for all text, so it tracks the host's light/dark theme with no hardcoded
+ * foreground colors (rgba neutrals + the amber meter fill only).
  */
 export function KenariDock() {
   const [snapshot, setSnapshot] = useState<DockSnapshot | null>(null)
@@ -128,7 +156,7 @@ export function KenariDock() {
   const [pollIntervalMs, setPollIntervalMs] = useState(DEFAULT_POLL_INTERVAL_MS)
   const [position, setPosition] = useState<DockPosition | null>(() => loadPosition())
   const [dragging, setDragging] = useState(false)
-  // Bumped by the display timer so the reset dates re-render each second.
+  // Bumped by the display timer so derived displays re-render each second.
   const [, setTick] = useState(0)
 
   const inFlight = useRef<AbortController | null>(null)
@@ -245,7 +273,7 @@ export function KenariDock() {
     }
   }, [pollIntervalMs, load])
 
-  // Display-only tick: re-renders the reset dates from fetchedAt each second.
+  // Display-only tick: re-renders derived displays each second.
   useEffect(() => {
     const id = window.setInterval(() => {
       setTick((t) => t + 1)
@@ -257,6 +285,8 @@ export function KenariDock() {
 
   const snap = snapshot
   const dimmed = error !== null && snap !== null
+  const plan = snap?.payload.plan ?? null
+  const usage = snap?.payload.usage ?? null
 
   const cardStyle: CSSProperties = {
     position: 'fixed',
@@ -267,7 +297,7 @@ export function KenariDock() {
     zIndex: 50,
     display: 'flex',
     flexDirection: 'column',
-    gap: 12,
+    gap: 10,
     background: 'var(--dsw-alias-bg-base, #1e1e1e)',
     border: '1px solid var(--dsw-alias-border-l1, rgba(255,255,255,0.12))',
     borderRadius: 10,
@@ -282,7 +312,7 @@ export function KenariDock() {
 
   const headerStyle: CSSProperties = {
     display: 'flex',
-    alignItems: 'baseline',
+    alignItems: 'center',
     justifyContent: 'space-between',
     gap: 8,
     whiteSpace: 'nowrap',
@@ -300,6 +330,13 @@ export function KenariDock() {
 
   const mutedStyle: CSSProperties = {
     opacity: 0.55,
+  }
+
+  const sectionLabelStyle: CSSProperties = {
+    ...mutedStyle,
+    fontSize: '0.78em',
+    letterSpacing: '0.08em',
+    textTransform: 'uppercase',
   }
 
   const buttonStyle: CSSProperties = {
@@ -320,26 +357,33 @@ export function KenariDock() {
     overflow: 'hidden',
   }
 
-  /** Reset date for one window, ticked forward from fetchedAt for display. */
-  const resetDate = (serverTime: number, win: DockWindow, fetchedAt: number): string =>
-    formatResetDate(new Date(serverTime + win.resets_in_secs * 1000 - elapsedSecs(fetchedAt) * 1000))
+  const statBoxStyle: CSSProperties = {
+    flex: 1,
+    background: STAT_BOX_COLOR,
+    borderRadius: 8,
+    padding: 8,
+    display: 'flex',
+    flexDirection: 'column',
+    gap: 2,
+    minWidth: 0,
+  }
 
-  /** One meter row: label + reset date on top with the used percent, a usage bar underneath. */
-  const usageRow = (label: string, serverTime: number, win: DockWindow, fetchedAt: number) => (
+  /** One quota group row (Mingguan / Bulanan): label + reset stamp, used/sisa line, thin bar. */
+  const quotaRow = (label: string, win: DockWindow) => (
     <div>
       <div style={rowStyle}>
-        <span>
-          {`${label} `}
-          <span style={mutedStyle}>{resetDate(serverTime, win, fetchedAt)}</span>
-        </span>
-        <strong>{usedPct(win.used_frac)}</strong>
+        <strong>{label}</strong>
+        <span style={mutedStyle}>{`reset ${formatResetShort(win.resets_at)}`}</span>
+      </div>
+      <div style={{ ...mutedStyle, whiteSpace: 'nowrap' }}>
+        {`Terpakai ${formatRp(win.used_rp)} · Sisa ${formatRp(win.remaining_rp)}`}
       </div>
       <div style={trackStyle}>
         <div
           style={{
             height: '100%',
             borderRadius: 3,
-            width: `${usedFraction(win.used_frac) * 100}%`,
+            width: `${usedFrac(win) * 100}%`,
             background: METER_FILL_COLOR,
           }}
         />
@@ -352,7 +396,7 @@ export function KenariDock() {
       <div style={headerStyle} data-testid="kenari-drag-handle" onPointerDown={handleHeaderPointerDown}>
         <button
           type="button"
-          style={{ ...buttonStyle, display: 'inline-flex', alignItems: 'center', gap: 4, cursor: 'pointer' }}
+          style={{ ...buttonStyle, display: 'inline-flex', alignItems: 'center', gap: 5, cursor: 'pointer' }}
           data-testid="kenari-toggle"
           aria-expanded={!collapsed}
           aria-controls="kenari-usage-body"
@@ -360,8 +404,25 @@ export function KenariDock() {
           onPointerDown={(e) => e.stopPropagation()}
           onClick={() => setCollapsed((c) => !c)}
         >
-          <span aria-hidden="true">◷</span>
-          <strong>Kenari Usage</strong>
+          <span
+            aria-hidden="true"
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              width: 16,
+              height: 16,
+              borderRadius: 4,
+              background: METER_FILL_COLOR,
+              color: '#1e1e1e',
+              fontSize: '0.8em',
+              fontWeight: 700,
+            }}
+          >
+            k
+          </span>
+          <strong>Kenari</strong>
+          {plan !== null && <span style={{ ...sectionLabelStyle }}>{plan.toUpperCase()}</span>}
           <svg
             width="10"
             height="10"
@@ -391,11 +452,47 @@ export function KenariDock() {
         </button>
       </div>
       {!collapsed && (
-        <div id="kenari-usage-body" style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+        <div id="kenari-usage-body" style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
           {snap !== null && (
             <div data-testid="kenari-usage-line" style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-              {usageRow('Week', snap.payload.serverTime, snap.payload.week, snap.fetchedAt)}
-              {usageRow('Month', snap.payload.serverTime, snap.payload.month, snap.fetchedAt)}
+              {(snap.payload.week !== null || snap.payload.month !== null) && (
+                <div data-testid="kenari-quota" style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                  <span style={sectionLabelStyle}>Kuota Paket</span>
+                  {snap.payload.week !== null && quotaRow('Mingguan', snap.payload.week)}
+                  {snap.payload.month !== null && quotaRow('Bulanan', snap.payload.month)}
+                </div>
+              )}
+              {usage !== null && (
+                <div data-testid="kenari-summary" style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                  <span style={sectionLabelStyle}>Ringkasan</span>
+                  <div style={{ display: 'flex', gap: 8 }}>
+                    <div style={statBoxStyle}>
+                      <strong>{formatCompact(usage.total_requests)}</strong>
+                      <span style={{ ...mutedStyle, fontSize: '0.85em' }}>Total Request</span>
+                    </div>
+                    <div style={statBoxStyle}>
+                      <strong>{formatCompact(usage.total_tokens)}</strong>
+                      <span style={{ ...mutedStyle, fontSize: '0.85em' }}>Total Token</span>
+                    </div>
+                  </div>
+                </div>
+              )}
+              {usage !== null && (
+                <div data-testid="kenari-models" style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                  <span style={sectionLabelStyle}>Penggunaan 30 Hari</span>
+                  <div style={{ maxHeight: 180, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 4 }}>
+                    {usage.models.map((m) => (
+                      <div key={m.model} style={rowStyle}>
+                        <span style={{ ...mutedStyle, overflow: 'hidden', textOverflow: 'ellipsis' }}>{m.model}</span>
+                        <span style={{ whiteSpace: 'nowrap' }}>
+                          <strong>{`${m.requests}x`}</strong>
+                          {` ${formatCompact(m.input_tok + m.output_tok)} tok`}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
           )}
           {error !== null && (

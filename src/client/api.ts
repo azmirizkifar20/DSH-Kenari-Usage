@@ -8,23 +8,53 @@
  * ever cross-origin.
  */
 
-/** One usage window as the host route returns it (pre-formatted display strings). */
+/** One quota window (week or month) as the host route returns it. */
 export interface DockWindow {
-  /** Fraction of the quota consumed (0.883 → the host formats "88.3%"). */
-  used_frac: number
-  /** Whole seconds until the window resets. */
-  resets_in_secs: number
-  /** Host-formatted percent string (single formatting path stays host-side). */
-  percent: string
-  /** Host-formatted countdown string at fetch time. */
-  countdown: string
+  /** Raw rupiah consumed within the window. */
+  used_rp: number
+  /** Raw rupiah left within the window. */
+  remaining_rp: number
+  /** ISO timestamp (UTC) of when the window resets. */
+  resets_at: string
 }
 
-/** Success body of GET /dsh-kenari-usage. */
+/** One model's 30-day usage as the host route returns it. */
+export interface DockModelUsage {
+  /** Model identifier (e.g. "glm-5-3-flash"). */
+  model: string
+  /** Request count within the 30-day window. */
+  requests: number
+  /** Total input tokens within the 30-day window. */
+  input_tok: number
+  /** Total output tokens within the 30-day window. */
+  output_tok: number
+}
+
+/** 30-day usage aggregate as the host route returns it. */
+export interface DockUsage {
+  /** Window descriptor the host reports on; always "30d" today. */
+  window: string
+  /** Per-model usage, already sorted by the host — render as-is. */
+  models: DockModelUsage[]
+  /** Total request count across all models in the window. */
+  total_requests: number
+  /** Total token count across all models in the window. */
+  total_tokens: number
+}
+
+/** Success body of GET /dsh-kenari-usage. All display fields may be null. */
 export interface DockPayload {
   ok: true
-  week: DockWindow
-  month: DockWindow
+  /** Plan name (e.g. "Kreator"); null while unknown. */
+  plan: string | null
+  /** Coupon label, if any; null when none. */
+  coupon: string | null
+  /** Weekly quota window; null while unknown. */
+  week: DockWindow | null
+  /** Monthly quota window; null while unknown. */
+  month: DockWindow | null
+  /** 30-day usage aggregate; null while unknown. */
+  usage: DockUsage | null
   /** Host epoch ms when the payload was assembled (advisory). */
   serverTime: number
   /** Suggested auto-poll cadence in ms; the dock falls back to 60000. */

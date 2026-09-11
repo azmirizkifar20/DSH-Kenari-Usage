@@ -2,6 +2,14 @@ import type { Context } from '@deepseek-ai/cordis'
 import Schema from '@deepseek-ai/schemastery'
 import { defineTool } from '@deepseek-ai/dsh-tools'
 import { formatUsage, parseSubscription, type ParsedUsage } from './format.js'
+import {
+  formatResetShort,
+  formatRp,
+  parseQuota,
+  parseUsageMarkdown,
+  type ParsedModelUsage,
+  type ParsedQuota,
+} from './quota.js'
 
 export const name = 'kenari-usage'
 
@@ -11,6 +19,7 @@ export interface Config {
   endpoint: string
   cookieName?: string
   sessionCookie?: string
+  apiKey?: string
   pollIntervalSecs?: number
 }
 
@@ -18,12 +27,17 @@ export const Config: Schema<Config> = Schema.object({
   endpoint: Schema.string()
     .pattern(/^https?:\/\/.+/)
     .default('https://kenari.id/api/subscription')
-    .description('Kenari subscription endpoint (override via cordis.yml, no code edit needed).'),
+    .description(
+      'Deprecated fallback: Kenari subscription endpoint for the cookie path (unused when apiKey is set).',
+    ),
   cookieName: Schema.string()
     .default('kn_session')
-    .description('Kenari session cookie name, sent as the Cookie header.'),
+    .description('Deprecated fallback: Kenari session cookie name, sent as the Cookie header.'),
   sessionCookie: Schema.string().description(
-    'Kenari session cookie value (secret — set via the profile cordis.patch.yml, never committed to git).',
+    'Deprecated fallback: Kenari session cookie value (secret — profile cordis.patch.yml only, never commit). Ignored when apiKey is set.',
+  ),
+  apiKey: Schema.string().description(
+    'Kenari API key (kn-... secret — set via the profile cordis.patch.yml, never commit it). When set and non-empty the official Bearer API is used; otherwise the deprecated sessionCookie fallback applies.',
   ),
   pollIntervalSecs: Schema.number().min(0).default(0).description('Poll interval in seconds, 0 = off.'),
 })
@@ -33,10 +47,15 @@ const FETCH_TIMEOUT_MS = 8000
 
 const DEFAULT_ENDPOINT = 'https://kenari.id/api/subscription'
 
+/** Official Bearer API endpoints. */
+export const QUOTA_URL = 'https://kenari.id/v1/account/quota'
+export const MCP_URL = 'https://kenari.id/mcp'
+
 /** Config cells set by apply(); endpoint default allows direct tool use in tests. */
 let activeEndpoint: string = DEFAULT_ENDPOINT
 let activeCookieName: string = 'kn_session'
 let activeCookieValue: string | undefined
+let activeApiKey: string | undefined
 let activePollIntervalSecs: number = 0
 
 interface UsageWindow {
@@ -49,15 +68,28 @@ interface SuccessValue {
   month: UsageWindow
 }
 
+interface ModelUsagePayload extends ParsedModelUsage {
+  window: '30d'
+}
+
+interface QuotaSuccessValue {
+  quota: ParsedQuota
+  usage: ModelUsagePayload | null
+}
+
 interface ErrorValue {
   error: string
   retryable: boolean
 }
 
-type ToolValue = SuccessValue | ErrorValue
+type ToolValue = SuccessValue | QuotaSuccessValue | ErrorValue
 
 function isErrorValue(value: ToolValue): value is ErrorValue {
   return 'error' in value
+}
+
+function isQuotaValue(value: ToolValue): value is QuotaSuccessValue {
+  return 'quota' in value
 }
 
 type MetaRecord = Record<string, string | boolean>
@@ -66,7 +98,15 @@ function errorMeta(scope: string, v: ErrorValue): MetaRecord {
   return { ok: false, window: scope, error: v.error, retryable: v.retryable }
 }
 
-function okMeta(scope: string, v: SuccessValue): MetaRecord {
+function okMeta(scope: string, v: SuccessValue | QuotaSuccessValue): MetaRecord {
+  if (isQuotaValue(v)) {
+    return {
+      ok: true,
+      window: scope,
+      plan: v.quota.plan ?? '',
+      hasUsage: v.usage !== null,
+    }
+  }
   const formatted = formatUsage(v)
   return {
     ok: true,
@@ -109,6 +149,77 @@ const outputSchema = {
       type: 'object',
       additionalProperties: false,
       properties: {
+        quota: {
+          type: 'object',
+          required: true,
+          additionalProperties: false,
+          properties: {
+            plan: { oneOf: [{ type: 'string' }, { type: 'null' }] },
+            coupon: { type: 'json' },
+            week: {
+              oneOf: [
+                {
+                  type: 'object',
+                  additionalProperties: false,
+                  properties: {
+                    used_rp: { type: 'number', required: true },
+                    remaining_rp: { type: 'number', required: true },
+                    resets_at: { type: 'string', required: true },
+                  },
+                },
+                { type: 'null' },
+              ],
+            },
+            month: {
+              oneOf: [
+                {
+                  type: 'object',
+                  additionalProperties: false,
+                  properties: {
+                    used_rp: { type: 'number', required: true },
+                    remaining_rp: { type: 'number', required: true },
+                    resets_at: { type: 'string', required: true },
+                  },
+                },
+                { type: 'null' },
+              ],
+            },
+          },
+        },
+        usage: {
+          oneOf: [
+            {
+              type: 'object',
+              additionalProperties: false,
+              properties: {
+                window: { type: 'string', required: true },
+                models: {
+                  type: 'array',
+                  required: true,
+                  items: {
+                    type: 'object',
+                    additionalProperties: false,
+                    properties: {
+                      model: { type: 'string', required: true },
+                      requests: { type: 'number', required: true },
+                      input_tok: { type: 'number', required: true },
+                      output_tok: { type: 'number', required: true },
+                    },
+                  },
+                },
+                total_requests: { type: 'number', required: true },
+                total_tokens: { type: 'number', required: true },
+              },
+            },
+            { type: 'null' },
+          ],
+        },
+      },
+    },
+    {
+      type: 'object',
+      additionalProperties: false,
+      properties: {
         error: { type: 'string', required: true },
         retryable: { type: 'boolean', required: true },
       },
@@ -118,6 +229,29 @@ const outputSchema = {
 
 function errorText(value: ErrorValue): string {
   return value.error
+}
+
+function formatQuotaText(v: QuotaSuccessValue): string {
+  const parts: string[] = []
+  const planLabel = v.quota.plan ?? 'unknown plan'
+  if (v.quota.week !== null) {
+    const w = v.quota.week
+    parts.push(
+      `Week used ${formatRp(w.used_rp)} / remaining ${formatRp(w.remaining_rp)} (resets ${formatResetShort(w.resets_at)})`,
+    )
+  }
+  if (v.quota.month !== null) {
+    const m = v.quota.month
+    parts.push(
+      `Month used ${formatRp(m.used_rp)} / remaining ${formatRp(m.remaining_rp)} (resets ${formatResetShort(m.resets_at)})`,
+    )
+  }
+  const windows = parts.length > 0 ? parts.join('; ') : 'no quota windows'
+  const totals =
+    v.usage !== null
+      ? `30d totals: ${v.usage.total_requests} requests, ${v.usage.total_tokens} tokens across ${v.usage.models.length} models`
+      : 'per-model usage unavailable'
+  return `Plan ${planLabel} — ${windows}; ${totals}`
 }
 
 /** Fetch with per-attempt timeout, honoring caller cancellation. Throws on caller abort. */
@@ -141,6 +275,46 @@ async function fetchJsonOnce(endpoint: string, callerSignal: AbortSignal): Promi
     }
     return await fetch(endpoint, {
       headers,
+      signal: ctrl.signal,
+    })
+  } finally {
+    clearTimeout(timer)
+    callerSignal.removeEventListener('abort', onCallerAbort)
+  }
+}
+
+/** Bearer fetch with the same per-attempt timeout + caller-abort pattern. */
+async function fetchBearerOnce(
+  url: string,
+  apiKey: string,
+  callerSignal: AbortSignal,
+  init?: { method?: string; body?: string; accept?: string },
+): Promise<Response> {
+  const ctrl = new AbortController()
+  const onCallerAbort = (): void => {
+    ctrl.abort(callerSignal.reason)
+  }
+  if (callerSignal.aborted) {
+    throw callerSignal.reason instanceof Error
+      ? callerSignal.reason
+      : new Error('aborted')
+  }
+  callerSignal.addEventListener('abort', onCallerAbort, { once: true })
+  const timer = setTimeout(() => {
+    ctrl.abort(new Error('fetch timeout after 8000ms'))
+  }, FETCH_TIMEOUT_MS)
+  try {
+    const headers: Record<string, string> = {
+      Authorization: `Bearer ${apiKey}`,
+      Accept: init?.accept ?? 'application/json',
+    }
+    if (init?.body !== undefined) {
+      headers['Content-Type'] = 'application/json'
+    }
+    return await fetch(url, {
+      method: init?.method ?? 'GET',
+      headers,
+      body: init?.body,
       signal: ctrl.signal,
     })
   } finally {
@@ -202,10 +376,194 @@ async function loadUsage(endpoint: string, callerSignal: AbortSignal): Promise<T
   return { error: `Kenari subscription fetch failed: ${lastNetworkError}`, retryable: true }
 }
 
+/** Extract the MCP `tools/call` markdown payload, tolerating SSE framing. */
+function parseMcpRpcPayload(raw: string): unknown {
+  const trimmed = raw.trim()
+  if (trimmed === '') {
+    throw new TypeError('MCP response is empty')
+  }
+  if (trimmed.startsWith('{') || trimmed.startsWith('[')) {
+    return JSON.parse(trimmed) as unknown
+  }
+  const payloads: string[] = []
+  for (const line of trimmed.split('\n')) {
+    const t = line.trim()
+    if (t.startsWith('data:')) {
+      const payload = t.slice('data:'.length).trim()
+      if (payload !== '' && payload !== '[DONE]') payloads.push(payload)
+    }
+  }
+  if (payloads.length === 0) {
+    throw new TypeError('MCP response is not JSON (unsupported SSE framing)')
+  }
+  return JSON.parse(payloads[payloads.length - 1] as string) as unknown
+}
+
+function unwrapMcpText(rpc: unknown): string {
+  if (typeof rpc !== 'object' || rpc === null) {
+    throw new TypeError('MCP response malformed: expected a JSON-RPC object')
+  }
+  const record = rpc as Record<string, unknown>
+  if ('error' in record && record['error'] !== undefined && record['error'] !== null) {
+    const msg =
+      typeof record['error'] === 'object' && record['error'] !== null
+        ? JSON.stringify(record['error'])
+        : String(record['error'])
+    throw new Error(`MCP tools/call error: ${msg}`)
+  }
+  const result = record['result']
+  if (typeof result !== 'object' || result === null) {
+    throw new TypeError('MCP response malformed: missing result')
+  }
+  const content = (result as Record<string, unknown>)['content']
+  if (!Array.isArray(content) || content.length === 0) {
+    throw new TypeError('MCP response malformed: missing result.content[0]')
+  }
+  const first = content[0] as Record<string, unknown>
+  if (typeof first['text'] !== 'string') {
+    throw new TypeError('MCP response malformed: result.content[0].text is not a string')
+  }
+  return first['text'] as string
+}
+
+async function fetchQuota(apiKey: string, callerSignal: AbortSignal): Promise<ParsedQuota> {
+  let res: Response
+  let lastNetworkError = 'unknown fetch failure'
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    try {
+      res = await fetchBearerOnce(QUOTA_URL, apiKey, callerSignal)
+    } catch (err) {
+      if (callerSignal.aborted) throw err
+      lastNetworkError = err instanceof Error ? err.message : String(err)
+      if (attempt === 0) continue
+      throw new Error(`Kenari quota fetch failed: ${lastNetworkError}`)
+    }
+    if (!res.ok) {
+      if (res.status === 401) {
+        throw Object.assign(
+          new Error(
+            'invalid API key (401) — create a fresh kn- key in the Kenari dashboard and update apiKey in the profile cordis.patch.yml (id: kenari-usage)',
+          ),
+          { retryable: false, status: 401 },
+        )
+      }
+      if (res.status === 403) {
+        throw Object.assign(
+          new Error('shared key not allowed (403) — use a personal kn- API key, not a shared one'),
+          { retryable: false, status: 403 },
+        )
+      }
+      if (res.status >= 400 && res.status < 500) {
+        throw Object.assign(new Error(`Kenari quota request failed (${res.status})`), {
+          retryable: false,
+          status: res.status,
+        })
+      }
+      if (attempt === 0) continue
+      throw Object.assign(new Error(`Kenari quota request failed (${res.status})`), {
+        retryable: true,
+        status: res.status,
+      })
+    }
+    let json: unknown
+    try {
+      json = await res.json()
+    } catch {
+      throw Object.assign(new Error('Kenari quota response malformed: invalid JSON'), {
+        retryable: false,
+      })
+    }
+    try {
+      return parseQuota(json)
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err)
+      throw Object.assign(new Error(`Kenari quota response malformed: ${msg}`), {
+        retryable: false,
+      })
+    }
+  }
+  throw new Error(`Kenari quota fetch failed: ${lastNetworkError}`)
+}
+
+async function fetchModelUsage(
+  apiKey: string,
+  callerSignal: AbortSignal,
+): Promise<ParsedModelUsage> {
+  const body = JSON.stringify({
+    jsonrpc: '2.0',
+    id: 1,
+    method: 'tools/call',
+    params: { name: 'kenari_usage', arguments: {} },
+  })
+  let res: Response
+  let lastNetworkError = 'unknown fetch failure'
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    try {
+      res = await fetchBearerOnce(MCP_URL, apiKey, callerSignal, {
+        method: 'POST',
+        body,
+        accept: 'application/json, text/event-stream',
+      })
+    } catch (err) {
+      if (callerSignal.aborted) throw err
+      lastNetworkError = err instanceof Error ? err.message : String(err)
+      if (attempt === 0) continue
+      throw new Error(`Kenari usage fetch failed: ${lastNetworkError}`)
+    }
+    if (!res.ok) {
+      if (res.status >= 400 && res.status < 500 && attempt === 1) {
+        throw new Error(`Kenari usage request failed (${res.status})`)
+      }
+      if (res.status >= 400 && res.status < 500) {
+        throw new Error(`Kenari usage request failed (${res.status})`)
+      }
+      if (attempt === 0) continue
+      throw new Error(`Kenari usage request failed (${res.status})`)
+    }
+    const raw = await res.text()
+    const rpc = parseMcpRpcPayload(raw)
+    const text = unwrapMcpText(rpc)
+    return parseUsageMarkdown(text)
+  }
+  throw new Error(`Kenari usage fetch failed: ${lastNetworkError}`)
+}
+
+function hasApiKey(): boolean {
+  return activeApiKey !== undefined && activeApiKey !== ''
+}
+
+/** Bearer path: quota is required, per-model usage is best-effort (null on MCP failure). */
+async function loadQuotaUsage(apiKey: string, callerSignal: AbortSignal): Promise<ToolValue> {
+  let quota: ParsedQuota
+  try {
+    quota = await fetchQuota(apiKey, callerSignal)
+  } catch (err) {
+    if (callerSignal.aborted) throw err
+    const msg = err instanceof Error ? err.message : String(err)
+    const retryable =
+      typeof err === 'object' &&
+      err !== null &&
+      'retryable' in err &&
+      typeof (err as Record<string, unknown>)['retryable'] === 'boolean'
+        ? ((err as Record<string, unknown>)['retryable'] as boolean)
+        : /fetch failed|request failed \(5\d\d\)/i.test(msg)
+    return { error: msg, retryable }
+  }
+  let usage: ModelUsagePayload | null = null
+  try {
+    const parsed = await fetchModelUsage(apiKey, callerSignal)
+    usage = { window: '30d', ...parsed }
+  } catch {
+    if (callerSignal.aborted) throw callerSignal.reason
+    usage = null
+  }
+  return { quota, usage }
+}
+
 export const kenariUsageTool = defineTool({
   name: 'kenari_usage',
   description:
-    'Show Kenari weekly and monthly usage as percentages plus reset countdowns. No arguments returns both windows.',
+    'Show Kenari plan quota (weekly/monthly used/remaining Rp) plus 30-day per-model usage. No arguments returns both windows.',
   parameters: {
     window: {
       type: 'string',
@@ -221,6 +579,9 @@ export const kenariUsageTool = defineTool({
       if (isErrorValue(v)) {
         return [{ type: 'text', text: errorText(v) }]
       }
+      if (isQuotaValue(v)) {
+        return [{ type: 'text', text: formatQuotaText(v) }]
+      }
       return [{ type: 'text', text: formatUsage(v).text }]
     },
     presentationMeta: (args, value) => {
@@ -233,6 +594,11 @@ export const kenariUsageTool = defineTool({
   isConcurrencySafe: () => true,
   async execute(args, exec) {
     void args
+    if (hasApiKey()) {
+      return loadQuotaUsage(activeApiKey as string, exec.signal) as Promise<
+        QuotaSuccessValue | ErrorValue
+      >
+    }
     return loadUsage(activeEndpoint, exec.signal) as Promise<SuccessValue | ErrorValue>
   },
   presentCall: (args) => {
@@ -253,7 +619,7 @@ export const kenariUsageTool = defineTool({
       | undefined
     if (meta !== undefined && meta !== null && (meta as { ok?: unknown }).ok === false) {
       const err = typeof meta.error === 'string' ? meta.error : ''
-      const needsLogin = /401|re-login|session expired/i.test(err)
+      const needsLogin = /401|re-login|session expired|invalid API key/i.test(err)
       return {
         card: 'generic',
         title: needsLogin ? 'Kenari usage — re-login required' : 'Kenari usage — error',
@@ -270,6 +636,7 @@ export function apply(ctx: Context, config: Config) {
     activeCookieName = config.cookieName
   }
   activeCookieValue = config.sessionCookie
+  activeApiKey = config.apiKey
   activePollIntervalSecs = config.pollIntervalSecs ?? 0
   ctx.tools.register(kenariUsageTool)
   installUsageRoute(ctx)
@@ -332,6 +699,48 @@ async function handleUsageRequest(
     })
     return
   }
+  if (hasApiKey()) {
+    let value: ToolValue
+    try {
+      value = await loadQuotaUsage(
+        activeApiKey as string,
+        AbortSignal.timeout(ROUTE_TIMEOUT_MS),
+      )
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err)
+      writeUsageJson(res, 502, {
+        ok: false,
+        error: `Kenari usage request failed: ${message}`,
+        retryable: true,
+      })
+      return
+    }
+    if (isErrorValue(value)) {
+      writeUsageJson(res, 502, { ok: false, error: value.error, retryable: value.retryable })
+      return
+    }
+    const quota = (value as QuotaSuccessValue).quota
+    const usage = (value as QuotaSuccessValue).usage
+    writeUsageJson(res, 200, {
+      ok: true,
+      plan: quota.plan,
+      coupon: quota.coupon ?? null,
+      week: quota.week,
+      month: quota.month,
+      usage:
+        usage === null
+          ? null
+          : {
+              window: '30d',
+              models: usage.models,
+              total_requests: usage.total_requests,
+              total_tokens: usage.total_tokens,
+            },
+      serverTime: Date.now(),
+      pollIntervalMs: pollIntervalMsOf(activePollIntervalSecs),
+    })
+    return
+  }
   let value: ToolValue
   try {
     value = await loadUsage(activeEndpoint, AbortSignal.timeout(ROUTE_TIMEOUT_MS))
@@ -348,18 +757,19 @@ async function handleUsageRequest(
     writeUsageJson(res, 502, { ok: false, error: value.error, retryable: value.retryable })
     return
   }
-  const formatted = formatUsage(value)
+  const formatted = formatUsage(value as SuccessValue)
+  const legacy = value as SuccessValue
   writeUsageJson(res, 200, {
     ok: true,
     week: {
-      used_frac: value.week.used_frac,
-      resets_in_secs: value.week.resets_in_secs,
+      used_frac: legacy.week.used_frac,
+      resets_in_secs: legacy.week.resets_in_secs,
       percent: formatted.card.week.percent,
       countdown: formatted.card.week.countdown,
     },
     month: {
-      used_frac: value.month.used_frac,
-      resets_in_secs: value.month.resets_in_secs,
+      used_frac: legacy.month.used_frac,
+      resets_in_secs: legacy.month.resets_in_secs,
       percent: formatted.card.month.percent,
       countdown: formatted.card.month.countdown,
     },

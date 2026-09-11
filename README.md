@@ -1,13 +1,13 @@
 # dsh-kenari-usage
 
-A DeepSeek Harness plugin that shows **Kenari provider usage** — weekly and monthly consumption as percentages plus reset countdowns.
+A DeepSeek Harness plugin that shows **Kenari provider usage** — official `kn-` Bearer API quota (weekly/monthly Rp + resets) plus 30-day per-model usage.
 
--   📊 **Weekly + monthly usage** — reads the Kenari `/subscription` endpoint (`window_week` / `window_month`): `used_frac` rendered as a percentage and `resets_in_secs` as a human countdown
--   📌 **Floating usage card** — a Kenari Usage card (`◷ Kenari Usage`, rows Week/Month with reset date + **used** % + usage bar + Refresh) floating bottom-right over the chat body (default level with the composer; drag the header to reposition anywhere, position persists in `localStorage`; chevron collapses/expands), auto-polling every 60s, no prompt needed
+-   📊 **Quota + 30-day usage** — official Bearer `GET /v1/account/quota` (`{coupon,plan:{name,windows:{week:{used_rp,remaining_rp,resets_at},month:{...}}}}`) plus MCP `kenari_usage` markdown-table usage (30-day per-model + totals) parsed server-side in `src/quota.ts`
+-   📌 **Floating usage card** — a Kenari Usage card (KUOTA PAKET Rp rows + bars, RINGKASAN boxes, PENGGUNAAN 30 HARI list) floating bottom-right over the chat body (drag the header to reposition anywhere, position persists in `localStorage`; chevron collapses/expands), auto-polling every 60s, no prompt needed
 -   🛠️ **Model tool** — `kenari_usage`, so the agent can query usage on demand
--   🔑 **Session cookie auth** — sends your `kn_session` value (configured in the profile patch) as an explicit `Cookie:` header; nothing else leaves your machine
--   🖥️ **Web UI** — floating card (draggable, collapsible, usage bars). The framework-free DOM panel in `src/panel.ts` is legacy/unmounted, kept only for tests.
--   ✅ **Tests** — vitest, 24 tests (format/parse + mocked tool integration + legacy panel behavior)
+-   🔑 **API key auth (preferred)** — sends your `kn-` Bearer key as an explicit `Authorization:` header; legacy `sessionCookie` remains only as a deprecated fallback; nothing else leaves your machine
+-   🖥️ **Web UI** — floating card (draggable, collapsible, refresh, KUOTA PAKET / RINGKASAN / 30-day list). The framework-free DOM panel in `src/panel.ts` is legacy/unmounted, kept only for tests.
+-   ✅ **Tests** — vitest, ~43 tests (quota parse/format + Bearer tool integration + route contract + legacy panel/format)
 
 ## Install
 
@@ -43,33 +43,33 @@ dsh plugin --profile web remove dsh-kenari-usage
 
 ## Configuration
 
-The endpoint is resolved from plugin config (override without code edits). Authentication uses an explicit session cookie: copy the `kn_session` value from your logged-in Kenari browser session (DevTools → Application → Cookies → `kenari.id`) and set it as `sessionCookie`. Without it the tool returns a "not configured" error without fetching.
+The endpoint is resolved from plugin config (override without code edits). Authentication uses the official `kn-` Bearer API key (preferred): paste your Kenari API key and set it as `apiKey`. The legacy `sessionCookie` (`kn_session` cookie value) remains only as a deprecated fallback when `apiKey` is unset — without either, the tool returns a "not configured" error without fetching.
 
 Override the plugin row in the profile's `cordis.patch.yml` to configure (note: a patch replaces the row's whole `config`, so restate `endpoint` too):
 
 ```yaml
 - id: kenari-usage
   config:
-    endpoint: https://kenari.id/api/subscription  # Kenari subscription endpoint
-    sessionCookie: 'PASTE_KN_SESSION_VALUE_HERE'   # secret — plaintext in this file, never share/commit it
-    cookieName: kn_session                         # optional, defaults to kn_session
+    endpoint: https://kenari.id/api/subscription  # deprecated fallback endpoint (unused when apiKey is set)
+    apiKey: 'PASTE_KN_KEY_HERE'                    # secret — plaintext in this file, never share/commit it
+    cookieName: kn_session                         # optional deprecated fallback, defaults to kn_session
     pollIntervalSecs: 0                            # dock auto-poll cadence in seconds; host clamps to min 60 (0 = default 60s)
 ```
 
-When the cookie expires (HTTP 401), open Kenari in the browser to refresh the session, paste the new `kn_session` value, and restart `dsh web`.
+When the API key is invalid (HTTP 401) or shared (HTTP 403), the tool returns a non-retryable error — paste a fresh key and restart `dsh web`. When falling back to the deprecated cookie path and it expires (HTTP 401), open Kenari in the browser to refresh the session and paste the new `kn_session` value.
 
 ## Web UI
 
--   **Floating usage card** — `◷ Kenari Usage ⌄ … ⟳` header over `Week Fri, Sep 11, 1:20 AM … 89%` / `Month … … 79%` meter rows (used quota, whole percent, plus a usage bar), floating over the chat body (registered in the `conversation.session.header.utilities` slot, surfaced as a floating card positioned by CSS since the host has no dedicated body slot), no prompt needed. Drag the header to reposition anywhere on screen — the position persists in `localStorage`. Click the chevron to collapse/expand. Auto-polls the same-origin `GET /dsh-kenari-usage` every 60s; manual Refresh (disabled while fetching, debounced 1000ms, aborts the prior request) forces `?refresh=1`.
--   **Expired session** — on 401 the dock shows a refresh-cookie error card, keeps the last known data dimmed, and offers Retry (no retry loop).
+-   **Floating usage card** — header (plan name + chevron + Refresh) over three sections: KUOTA PAKET (weekly/monthly Rp rows — used/sisa rupiah + thin usage bar + reset date), RINGKASAN (total request/token stat boxes), PENGGUNAAN 30 HARI (scrollable per-model list), floating over the chat body, no prompt needed. Drag the header to reposition anywhere on screen — the position persists in `localStorage`. Click the chevron to collapse/expand. Auto-polls the same-origin `GET /dsh-kenari-usage` every 60s; manual Refresh (disabled while fetching, debounced 1000ms, aborts the prior request) forces `?refresh=1`.
+-   **Auth errors** — on 401/403 the dock shows an invalid-key error card, keeps the last known data dimmed, and offers Retry (no retry loop); the deprecated cookie path still shows its refresh-cookie card on 401.
 -   **Countdown display** — computed once per fetch and ticked locally each second for display only; the tool-call card (`presentCall`/`presentResult`) still works via prompt as before.
 
 ## Model tool
 
 The agent can call `kenari_usage`:
 
--   no arguments: weekly + monthly usage (percentages + reset countdowns)
--   `window`: `week` / `month` to scope the display to one window (execute always returns both)
+-   no arguments: quota (weekly/monthly Rp + resets) + 30-day per-model usage with totals
+-   `window`: `week` / `month` to scope the quota display to one window (execute always returns both)
 
 ## Development
 
@@ -84,15 +84,18 @@ pnpm build       # node build.mjs → dist/ (host tsc + client esbuild bundle)
 
 ```text
 src/
-├── kenari-usage.ts  # host half: Config, defineTool kenari_usage, GET /dsh-kenari-usage route
-├── format.ts        # pure shared logic: parseSubscription, formatPercent, formatCountdown, formatUsage
+├── kenari-usage.ts  # host half: Config (apiKey Bearer preferred, sessionCookie deprecated fallback), defineTool kenari_usage, GET /dsh-kenari-usage route
+├── quota.ts         # pure Bearer-API logic: parseQuota, parseUsageMarkdown (MCP usage source), formatRp, formatResetShort
+├── format.ts        # pure shared logic: parseSubscription, formatPercent, formatCountdown, formatUsage (deprecated cookie path)
 ├── panel.ts         # legacy framework-free DOM panel (unmounted; kept for tests)
 ├── client/
 │   ├── index.ts     # browser half: registers conversation.session.header.utilities
 │   ├── api.ts       # same-origin fetch to /dsh-kenari-usage + payload types
 │   └── KenariDock.tsx  # dock component (auto-poll 60s + Refresh + error card)
 ├── format.test.ts   # unit tests: percent, countdown, edges
-├── tool.test.ts     # tool integration tests with mocked fetch
+├── quota.test.ts    # quota + MCP markdown-table parse/format tests
+├── tool.test.ts     # tool integration tests with mocked fetch (Bearer quota+MCP + cookie fallback)
+├── route.test.ts    # GET /dsh-kenari-usage frozen contract tests
 └── panel.test.ts    # panel behavior tests with mocked DOM
 build.mjs           # dual build: tsc (host) + esbuild browser CJS + __ModuleLoader__ banner
 cordis.yml          # local dev patch (points at dist/)
@@ -108,10 +111,10 @@ cordis.patch.yml    # bundle patch manifest (package name)
 
 ## Scope notes
 
--   **Week/month only** — other `/subscription` fields (plan name, micro-IDR balances, free tier, web search, coupons, perks) are parsed past but intentionally never rendered in v1.
+-   **Quota + 30-day usage** — quota comes from the official Bearer `GET /v1/account/quota` (plan name, coupon, weekly/monthly used/remaining Rp + reset timestamps); per-model 30-day usage comes from the MCP `kenari_usage` markdown table, parsed server-side; the deprecated cookie `/subscription` path (percent + countdown) applies only when `apiKey` is unset.
 -   **Auto-poll, dock only** — the dock refetches every 60s (host-suggested `pollIntervalMs`, floored at 60s even when `pollIntervalSecs` is 0); the chat tool path never polls. No WebSocket/SSE.
 -   **Single formatting path** — the tool and the host route share `formatUsage` (host-side); the dock re-derives its used-% and reset-date display client-side from the raw `used_frac` / `serverTime + resets_in_secs` numbers (host and client bundle separately).
 
 ## Security
 
-The fetch sends the configured `sessionCookie` as an explicit `Cookie:` header from the harness host (Node), so Kenari CORS headers don't apply to the tool path. The cookie value lives only in your profile's `cordis.patch.yml` — it is never bundled into `dist/`, never written to logs, and never committed to this repo. Treat that file as secret: don't share or commit it, and rotate the value if exposed. As with any third-party plugin, review the source before installing.
+The host sends the configured `apiKey` as an explicit `Authorization: Bearer` header from the harness host (Node) to the official quota/MCP endpoints, so Kenari CORS headers don't apply to the tool path. The deprecated cookie fallback sends `sessionCookie` as a `Cookie:` header to `/api/subscription` only when `apiKey` is unset. The key value lives only in your profile's `cordis.patch.yml` — it is never bundled into `dist/`, never written to logs, and never committed to this repo. Treat that file as secret: don't share or commit it, and rotate the value if exposed. As with any third-party plugin, review the source before installing.
