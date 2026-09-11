@@ -38,7 +38,7 @@ const DISPLAY_TICK_MS = 1000
 const DEFAULT_POLL_INTERVAL_MS = 60000
 
 /** Card width (px) — fixed regardless of where it's dragged. */
-const CARD_WIDTH = 260
+const CARD_WIDTH = 270
 
 /** Default position (bottom-right over the chat, level with the composer)
  *  before the user has ever dragged the card. */
@@ -301,7 +301,7 @@ export function KenariDock() {
     background: 'var(--dsw-alias-bg-base, #1e1e1e)',
     border: '1px solid var(--dsw-alias-border-l1, rgba(255,255,255,0.12))',
     borderRadius: 10,
-    padding: '10px 12px 12px',
+    padding: '12px 14px',
     boxShadow: '0 4px 16px rgba(0,0,0,0.35)',
     color: 'inherit',
     fontSize: '0.85em',
@@ -328,15 +328,38 @@ export function KenariDock() {
     whiteSpace: 'nowrap',
   }
 
+  /** Wraps instead of squeezing: the reset stamp drops to its own line
+   *  rather than colliding with the window label on narrow cards. */
+  const quotaLabelRowStyle: CSSProperties = {
+    display: 'flex',
+    alignItems: 'baseline',
+    justifyContent: 'space-between',
+    gap: 8,
+    flexWrap: 'wrap',
+  }
+
+  const modelRowStyle: CSSProperties = {
+    ...rowStyle,
+    fontSize: '0.82em',
+    padding: '2px 0',
+  }
+
   const mutedStyle: CSSProperties = {
     opacity: 0.55,
   }
 
   const sectionLabelStyle: CSSProperties = {
-    ...mutedStyle,
-    fontSize: '0.78em',
-    letterSpacing: '0.08em',
+    opacity: 0.5,
+    fontSize: '0.72em',
+    letterSpacing: '0.06em',
     textTransform: 'uppercase',
+  }
+
+  /** Margin variant for section labels in the body column; the header plan
+   *  chip shares sectionLabelStyle and must not get the margin. */
+  const sectionLabelBlockStyle: CSSProperties = {
+    ...sectionLabelStyle,
+    marginTop: 12,
   }
 
   const buttonStyle: CSSProperties = {
@@ -371,11 +394,11 @@ export function KenariDock() {
   /** One quota group row (Mingguan / Bulanan): label + reset stamp, used/sisa line, thin bar. */
   const quotaRow = (label: string, win: DockWindow) => (
     <div>
-      <div style={rowStyle}>
+      <div style={quotaLabelRowStyle}>
         <strong>{label}</strong>
-        <span style={mutedStyle}>{`reset ${formatResetShort(win.resets_at)}`}</span>
+        <span style={{ ...mutedStyle, fontSize: '0.78em' }}>{`reset ${formatResetShort(win.resets_at)}`}</span>
       </div>
-      <div style={{ ...mutedStyle, whiteSpace: 'nowrap' }}>
+      <div style={{ ...mutedStyle, fontSize: '0.8em', marginTop: 3 }}>
         {`Terpakai ${formatRp(win.used_rp)} · Sisa ${formatRp(win.remaining_rp)}`}
       </div>
       <div style={trackStyle}>
@@ -454,37 +477,37 @@ export function KenariDock() {
       {!collapsed && (
         <div id="kenari-usage-body" style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
           {snap !== null && (
-            <div data-testid="kenari-usage-line" style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+            <div data-testid="kenari-usage-line" style={{ display: 'flex', flexDirection: 'column', gap: 0 }}>
               {(snap.payload.week !== null || snap.payload.month !== null) && (
-                <div data-testid="kenari-quota" style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                  <span style={sectionLabelStyle}>Kuota Paket</span>
+                <div data-testid="kenari-quota" style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                  <span style={sectionLabelBlockStyle}>Kuota Paket</span>
                   {snap.payload.week !== null && quotaRow('Mingguan', snap.payload.week)}
                   {snap.payload.month !== null && quotaRow('Bulanan', snap.payload.month)}
                 </div>
               )}
               {usage !== null && (
                 <div data-testid="kenari-summary" style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                  <span style={sectionLabelStyle}>Ringkasan</span>
+                  <span style={sectionLabelBlockStyle}>Ringkasan</span>
                   <div style={{ display: 'flex', gap: 8 }}>
                     <div style={statBoxStyle}>
-                      <strong>{formatCompact(usage.total_requests)}</strong>
-                      <span style={{ ...mutedStyle, fontSize: '0.85em' }}>Total Request</span>
+                      <strong style={{ fontSize: '1.05em' }}>{formatCompact(usage.total_requests)}</strong>
+                      <span style={{ ...mutedStyle, fontSize: '0.75em' }}>Total Request</span>
                     </div>
                     <div style={statBoxStyle}>
-                      <strong>{formatCompact(usage.total_tokens)}</strong>
-                      <span style={{ ...mutedStyle, fontSize: '0.85em' }}>Total Token</span>
+                      <strong style={{ fontSize: '1.05em' }}>{formatCompact(usage.total_tokens)}</strong>
+                      <span style={{ ...mutedStyle, fontSize: '0.75em' }}>Total Token</span>
                     </div>
                   </div>
                 </div>
               )}
               {usage !== null && (
                 <div data-testid="kenari-models" style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                  <span style={sectionLabelStyle}>Penggunaan 30 Hari</span>
-                  <div style={{ maxHeight: 180, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 4 }}>
+                  <span style={sectionLabelBlockStyle}>Penggunaan 30 Hari</span>
+                  <div style={{ maxHeight: 180, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 2 }}>
                     {usage.models.map((m) => (
-                      <div key={m.model} style={rowStyle}>
+                      <div key={m.model} style={modelRowStyle}>
                         <span style={{ ...mutedStyle, overflow: 'hidden', textOverflow: 'ellipsis' }}>{m.model}</span>
-                        <span style={{ whiteSpace: 'nowrap' }}>
+                        <span style={{ whiteSpace: 'nowrap', fontVariantNumeric: 'tabular-nums' }}>
                           <strong>{`${m.requests}x`}</strong>
                           {` ${formatCompact(m.input_tok + m.output_tok)} tok`}
                         </span>
