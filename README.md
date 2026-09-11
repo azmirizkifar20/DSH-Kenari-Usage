@@ -59,7 +59,7 @@ When the cookie expires (HTTP 401), open Kenari in the browser to refresh the se
 
 ## Web UI
 
--   **Floating usage card** — `◷ Kenari Usage ⌄ … ⟳` header over `Week Fri, Sep 11, 1:20 AM … 89%` / `Month … … 79%` meter rows (used quota, whole percent, plus a usage bar), fixed above the sidebar's Settings row (registered in the `conversation.session.header.utilities` slot, surfaced as a floating card positioned by CSS since the host has no dedicated sidebar slot), no prompt needed. Auto-polls the same-origin `GET /dsh-kenari-usage` every 60s; manual Refresh (disabled while fetching, debounced 1000ms, aborts the prior request) forces `?refresh=1`.
+-   **Floating usage card** — `◷ Kenari Usage ⌄ … ⟳` header over `Week Fri, Sep 11, 1:20 AM … 89%` / `Month … … 79%` meter rows (used quota, whole percent, plus a usage bar), floating over the chat body (registered in the `conversation.session.header.utilities` slot, surfaced as a floating card positioned by CSS since the host has no dedicated body slot), no prompt needed. Drag the header to reposition anywhere on screen — the position persists in `localStorage`. Click the chevron to collapse/expand. Auto-polls the same-origin `GET /dsh-kenari-usage` every 60s; manual Refresh (disabled while fetching, debounced 1000ms, aborts the prior request) forces `?refresh=1`.
 -   **Expired session** — on 401 the dock shows a refresh-cookie error card, keeps the last known data dimmed, and offers Retry (no retry loop).
 -   **Countdown display** — computed once per fetch and ticked locally each second for display only; the tool-call card (`presentCall`/`presentResult`) still works via prompt as before.
 
