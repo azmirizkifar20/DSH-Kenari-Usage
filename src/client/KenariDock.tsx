@@ -194,7 +194,7 @@ export function KenariDock() {
   const mounted = useRef(true)
   const cardRef = useRef<HTMLDivElement | null>(null)
   const dragOffset = useRef<{ x: number; y: number } | null>(null)
-  const resizeStart = useRef<{ startX: number; startWidth: number } | null>(null)
+  const resizeStart = useRef<{ startX: number; startWidth: number; startLeft: number | null; startTop: number } | null>(null)
 
   // Drag-to-reposition: pointerdown on the header starts tracking; move/up
   // listen on window so the drag keeps working even if the pointer leaves
@@ -237,9 +237,14 @@ export function KenariDock() {
   )
 
   const handleResizeMove = useCallback((e: PointerEvent) => {
-    if (resizeStart.current === null) return
-    const delta = resizeStart.current.startX - e.clientX
-    setCardWidth(clampCardWidth(resizeStart.current.startWidth + delta))
+    const rs = resizeStart.current
+    if (rs === null) return
+    const newWidth = clampCardWidth(rs.startWidth + (rs.startX - e.clientX))
+    setCardWidth(newWidth)
+    if (rs.startLeft !== null) {
+      const newLeft = rs.startLeft + rs.startWidth - newWidth
+      setPosition((pos) => ({ top: pos?.top ?? rs.startTop, left: newLeft }))
+    }
   }, [])
 
   const handleResizeUp = useCallback(() => {
@@ -251,17 +256,26 @@ export function KenariDock() {
       saveCardWidth(w)
       return w
     })
+    setPosition((pos) => {
+      if (pos !== null) savePosition(pos)
+      return pos
+    })
   }, [handleResizeMove])
 
   const handleResizePointerDown = useCallback(
     (e: ReactPointerEvent<HTMLDivElement>) => {
       e.stopPropagation()
-      resizeStart.current = { startX: e.clientX, startWidth: cardWidth }
+      resizeStart.current = {
+        startX: e.clientX,
+        startWidth: cardWidth,
+        startLeft: position?.left ?? null,
+        startTop: position?.top ?? 0,
+      }
       setResizing(true)
       window.addEventListener('pointermove', handleResizeMove)
       window.addEventListener('pointerup', handleResizeUp)
     },
-    [cardWidth, handleResizeMove, handleResizeUp],
+    [cardWidth, position, handleResizeMove, handleResizeUp],
   )
 
   // Drag listeners are only ever attached while a drag is in progress
