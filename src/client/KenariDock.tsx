@@ -60,10 +60,6 @@ const WIDTH_STORAGE_KEY = 'kenari-usage-dock-width'
 const CARD_HEIGHT_MIN = 160
 const CARD_HEIGHT_MAX = 800
 
-/** Header + padding reserve subtracted from the explicit card height to get
- *  the body maxHeight (header row ~40px + gaps/padding ~70px). */
-const CARD_CHROME_RESERVE = 110
-
 /** localStorage key for the user-resized card height. */
 const HEIGHT_STORAGE_KEY = 'kenari-usage-dock-height'
 
@@ -605,7 +601,7 @@ export function KenariDock() {
       ? { top: position.top, left: position.left }
       : { bottom: DEFAULT_CARD_BOTTOM, right: DEFAULT_CARD_RIGHT }),
     width: cardWidth,
-    ...(cardHeight !== null ? { height: cardHeight } : {}),
+    ...(cardHeight !== null ? { height: cardHeight, overflow: 'hidden' as const } : {}),
     zIndex: 50,
     display: 'flex',
     flexDirection: 'column',
@@ -825,7 +821,7 @@ export function KenariDock() {
             flexDirection: 'column',
             gap: 10,
             ...(cardHeight !== null
-              ? { maxHeight: Math.max(0, cardHeight - CARD_CHROME_RESERVE), overflowY: 'auto', minHeight: 0 }
+              ? { flex: 1, minHeight: 0, overflowY: 'auto' }
               : {}),
           }}
         >
