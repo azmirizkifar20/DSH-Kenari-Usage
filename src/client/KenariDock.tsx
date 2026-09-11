@@ -166,6 +166,9 @@ const DAY_BASELINE_STORAGE_KEY = 'kenari-usage-day-baseline'
 interface DayBaselinePerModel {
   requests: number
   tokens: number
+  /** Split counters; absent on baselines written before the in/out split. */
+  input_tok?: number
+  output_tok?: number
 }
 
 /**
@@ -185,8 +188,13 @@ interface DayBaseline {
 interface TodayUsage {
   requests: number
   tokens: number
-  /** Models with today requests > 0, sorted desc by today tokens. */
-  models: Array<{ model: string; requests: number; tokens: number }>
+  /**
+   * Models with today requests > 0, sorted desc by today tokens. `input` /
+   * `output` are null when the stored baseline predates the in/out split
+   * (only its combined `tokens` is diffable) — renderers fall back to the
+   * combined figure rather than inventing a split.
+   */
+  models: Array<{ model: string; requests: number; tokens: number; input: number | null; output: number | null }>
 }
 
 /** Local calendar day stamp `YYYY-MM-DD` (local time, not UTC). */
@@ -232,7 +240,7 @@ function saveDayBaseline(baseline: DayBaseline): void {
 function baselineFromUsage(usage: DockUsage, date: string): DayBaseline {
   const perModel: Record<string, DayBaselinePerModel> = {}
   for (const m of usage.models) {
-    perModel[m.model] = { requests: m.requests, tokens: m.input_tok + m.output_tok }
+    perModel[m.model] = { requests: m.requests, tokens: m.input_tok + m.output_tok, input_tok: m.input_tok, output_tok: m.output_tok }
   }
   return { date, total_requests: usage.total_requests, total_tokens: usage.total_tokens, perModel }
 }
@@ -247,10 +255,16 @@ function diffToday(usage: DockUsage, baseline: DayBaseline): TodayUsage {
   const clamp0 = (n: number): number => Math.max(0, n)
   const models: TodayUsage['models'] = []
   for (const m of usage.models) {
-    const base = baseline.perModel[m.model] ?? { requests: 0, tokens: 0 }
+    const base: DayBaselinePerModel = baseline.perModel[m.model] ?? { requests: 0, tokens: 0 }
     const requests = clamp0(m.requests - base.requests)
     if (requests > 0) {
-      models.push({ model: m.model, requests, tokens: clamp0(m.input_tok + m.output_tok - base.tokens) })
+      models.push({
+        model: m.model,
+        requests,
+        tokens: clamp0(m.input_tok + m.output_tok - base.tokens),
+        input: typeof base.input_tok === 'number' ? clamp0(m.input_tok - base.input_tok) : null,
+        output: typeof base.output_tok === 'number' ? clamp0(m.output_tok - base.output_tok) : null,
+      })
     }
   }
   models.sort((a, b) => b.tokens - a.tokens)
@@ -585,6 +599,7 @@ export function KenariDock() {
   const dimmed = error !== null && snap !== null
   const plan = snap?.payload.plan ?? null
   const usage = snap?.payload.usage ?? null
+  const balanceRp = snap?.payload.balance_rp ?? null
   // Today usage = current 30-day payload − start-of-day baseline. Hidden
   // until both a payload and a same-day baseline exist; the first fetch of
   // a new day installs the baseline so the diff starts at 0, never at a
@@ -707,7 +722,7 @@ export function KenariDock() {
         <span style={{ ...mutedStyle, fontSize: '0.78em' }}>{`reset ${formatResetShort(win.resets_at)}`}</span>
       </div>
       <div style={{ ...mutedStyle, fontSize: '0.8em', marginTop: 3 }}>
-        {`Terpakai ${formatRp(win.used_rp)} · Sisa ${formatRp(win.remaining_rp)}`}
+        {`Terpakai ${formatRp(win.used_rp)} · Sisa ${formatRp(win.remaining_rp)} · ${Math.round(usedFrac(win) * 100)}%`}
       </div>
       <div style={trackStyle}>
         <div
@@ -847,6 +862,11 @@ export function KenariDock() {
                       <span style={{ ...mutedStyle, fontSize: '0.75em' }}>Total Token</span>
                     </div>
                   </div>
+                  {balanceRp !== null && (
+                    <div data-testid="kenari-balance" style={{ ...mutedStyle, fontSize: '0.8em' }}>
+                      {`Saldo ${formatRp(balanceRp)}`}
+                    </div>
+                  )}
                 </div>
               )}
               {usage !== null && (
@@ -858,7 +878,7 @@ export function KenariDock() {
                         <span style={{ ...mutedStyle, overflow: 'hidden', textOverflow: 'ellipsis' }}>{m.model}</span>
                         <span style={{ whiteSpace: 'nowrap', fontVariantNumeric: 'tabular-nums' }}>
                           <strong>{`${m.requests}x`}</strong>
-                          {` ${formatCompact(m.input_tok + m.output_tok)} tok`}
+                          {` in ${formatCompact(m.input_tok)} · out ${formatCompact(m.output_tok)} tok`}
                         </span>
                       </div>
                     ))}
@@ -879,7 +899,9 @@ export function KenariDock() {
                             <span style={{ ...mutedStyle, overflow: 'hidden', textOverflow: 'ellipsis' }}>{m.model}</span>
                             <span style={{ whiteSpace: 'nowrap', fontVariantNumeric: 'tabular-nums' }}>
                               <strong>{`${m.requests}x`}</strong>
-                              {` ${formatCompact(m.tokens)} tok`}
+                              {m.input !== null && m.output !== null
+                                ? ` in ${formatCompact(m.input)} · out ${formatCompact(m.output)} tok`
+                                : ` ${formatCompact(m.tokens)} tok`}
                             </span>
                           </div>
                         ))}
@@ -890,11 +912,6 @@ export function KenariDock() {
                       <span>Belum ada pemakaian hari ini</span>
                     </div>
                   )}
-                  {/* Honest limitation: the baseline starts at the first fetch of the
-                      day, so usage before the card was first opened is not counted. */}
-                  <div style={{ ...mutedStyle, fontSize: '0.72em', marginTop: 2 }}>
-                    dihitung sejak card pertama dibuka hari ini — pemakaian sebelum itu tidak tercatat
-                  </div>
                 </div>
               )}
             </div>

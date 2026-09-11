@@ -55,6 +55,8 @@ export interface DockPayload {
   month: DockWindow | null
   /** 30-day usage aggregate; null while unknown. */
   usage: DockUsage | null
+  /** Wallet balance in rupiah; null while unavailable (never fails the payload). */
+  balance_rp: number | null
   /** Host epoch ms when the payload was assembled (advisory). */
   serverTime: number
   /** Suggested auto-poll cadence in ms; the dock falls back to 60000. */
