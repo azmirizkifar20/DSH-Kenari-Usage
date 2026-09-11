@@ -36,7 +36,7 @@ const DISPLAY_TICK_MS = 1000
 const DEFAULT_POLL_INTERVAL_MS = 60000
 
 /** Card width (px) — fixed regardless of where it's dragged. */
-const CARD_WIDTH = 280
+const CARD_WIDTH = 230
 
 /** Default position (bottom-right over the chat, level with the composer)
  *  before the user has ever dragged the card. */
