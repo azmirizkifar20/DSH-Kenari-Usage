@@ -23,7 +23,7 @@ Implemented as a single React component (`src/client/KenariDock.tsx`, ~1000 line
 ## Component Rules
 
 1. All styling is inline `CSSProperties`; shared colors/sizes must be module-level constants (`METER_FILL_COLOR`, `CARD_WIDTH_MIN`, …), never magic numbers scattered in JSX.
-2. New numeric displays use the existing helpers — `formatInt`, `formatRpId`, `formatCompact`, `formatResetShort`, `usedFrac` — and render with `tabular-nums`; do not re-implement formatting inline.
+2. New numeric displays use the existing helpers — `formatInt`, `formatRpId`, `formatCompact`, `formatResetCountdown`, `usedFrac` — and render with `tabular-nums`; do not re-implement formatting inline.
 3. Interaction handlers must be pointer-event based with clamping (`clampCardWidth`/`clampCardHeight`) and persist through the `save*` helpers only.
 4. The component fetches same-origin only (`fetchDock` in `src/client/api.ts`); no credentials, no secrets, no cross-origin URLs, no host-module imports.
 5. Animations that need `@keyframes` (inline styles cannot express them) are injected once into a `<style id="kenari-usage-dock-styles">` by `ensureDockStyles()` in `src/client/KenariDock.tsx`, and the animated element opts in via a class (`.kenari-dock-spin`); honor `prefers-reduced-motion` inside that stylesheet.

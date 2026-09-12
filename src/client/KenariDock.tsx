@@ -68,9 +68,6 @@ const METER_FILL_COLOR = '#e3a53d'
 const METER_TRACK_COLOR = 'rgba(255,255,255,0.12)'
 const STAT_BOX_COLOR = 'rgba(255,255,255,0.06)'
 
-/** English month abbreviations for the UTC reset stamp (host locale agnostic). */
-const MONTHS_ABBR = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'] as const
-
 interface DockPosition {
   top: number
   left: number
@@ -301,18 +298,22 @@ function trimZero(s: string): string {
 }
 
 /**
- * Format an ISO reset timestamp as `13 Sep 20:30` in UTC (fixed, not
- * locale-derived, so the display matches the reference exactly). Returns the
- * raw string when the timestamp is unparseable.
+ * Countdown to an ISO reset timestamp as an abbreviated Indonesian duration:
+ * `1h 18j` (hari + jam), `3j 45m`, `12m`, `<1m`, or `segera` once past.
+ * Compared against the live clock so the 1s display tick keeps it current.
+ * Returns the raw string when the timestamp is unparseable.
  */
-function formatResetShort(iso: string): string {
-  const date = new Date(iso)
-  if (Number.isNaN(date.getTime())) return iso
-  const day = date.getUTCDate()
-  const month = MONTHS_ABBR[date.getUTCMonth()]
-  const hh = `${date.getUTCHours()}`.padStart(2, '0')
-  const mm = `${date.getUTCMinutes()}`.padStart(2, '0')
-  return `${day} ${month} ${hh}:${mm}`
+function formatResetCountdown(iso: string): string {
+  const target = new Date(iso).getTime()
+  if (Number.isNaN(target)) return iso
+  const totalMinutes = Math.floor((target - Date.now()) / 60000)
+  if (totalMinutes < 1) return 'segera'
+  const days = Math.floor(totalMinutes / 1440)
+  const hours = Math.floor((totalMinutes % 1440) / 60)
+  const minutes = totalMinutes % 60
+  if (days > 0) return `${days}h ${hours}j`
+  if (hours > 0) return `${hours}j ${minutes}m`
+  return `${minutes}m`
 }
 
 /** id for the once-injected dock stylesheet (keyframes the spinner needs). */
@@ -784,7 +785,7 @@ export function KenariDock() {
     <div>
       <div style={quotaLabelRowStyle}>
         <strong>{label}</strong>
-        <span style={{ ...mutedStyle, fontSize: '0.78em' }}>{`reset ${formatResetShort(win.resets_at)}`}</span>
+        <span style={{ ...mutedStyle, fontSize: '0.78em' }}>{`reset dalam ${formatResetCountdown(win.resets_at)}`}</span>
       </div>
       <div style={{ ...mutedStyle, fontSize: '0.8em', marginTop: 3 }}>
         {`Terpakai ${formatRpId(win.used_rp)} · Sisa ${formatRpId(win.remaining_rp)}`}

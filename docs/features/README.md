@@ -3,7 +3,7 @@
 This folder contains documentation for implemented features and current state.
 
 **Updated**: 2026-09-12
-**Recent**: Default dock auto-poll lowered from 60s to 6s; `pollIntervalSecs` configurable with a 6s floor (route payload + client fallback updated, contract test added).
+**Recent**: KUOTA PAKET reset stamp replaced by a live countdown (`reset dalam 1h 18j`) ticking each second from `resets_at`.
 
 ## Index
 
