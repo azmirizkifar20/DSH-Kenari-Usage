@@ -3,7 +3,6 @@ import {
   formatCompactId,
   formatResetShort,
   formatRp,
-  parseBalance,
   parseQuota,
   parseUsageMarkdown,
   usedFracWindow,
@@ -91,26 +90,6 @@ describe('parseUsageMarkdown', () => {
       total_requests: 0,
       total_tokens: 0,
     })
-  })
-})
-
-describe('parseBalance', () => {
-  it('parses the live kenari_balance shape', () => {
-    expect(parseBalance('Saldo: Rp 97')).toBe(97)
-  })
-
-  it('tolerates separators, decimals, and JSON envelopes', () => {
-    expect(parseBalance('Saldo: Rp 1.234.567')).toBe(1234567)
-    expect(parseBalance('{"balance_rp": 4600}')).toBe(4600)
-    expect(parseBalance('{"saldo": "Rp 4600,50"}')).toBe(4600)
-  })
-
-  it('returns null for missing/garbage/non-string (never throws)', () => {
-    expect(parseBalance('')).toBeNull()
-    expect(parseBalance('no rupiah here')).toBeNull()
-    expect(parseBalance('{"nope": true}')).toBeNull()
-    expect(parseBalance(null)).toBeNull()
-    expect(parseBalance(97)).toBeNull()
   })
 })
 

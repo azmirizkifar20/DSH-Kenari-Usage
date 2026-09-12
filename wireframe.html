@@ -1,0 +1,350 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Wireframe — dsh-kenari-usage (dock card, rev. 6)</title>
+<style>
+  :root {
+    --ink: #1f2328;
+    --muted: #6a737d;
+    --line: #b9bfc7;
+    --soft: #f0f2f4;
+    --box: #fafbfc;
+    --amber: #e3a53d;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    padding: 32px;
+    font-family: "Segoe UI", system-ui, -apple-system, sans-serif;
+    color: var(--ink);
+    background: #eef0f3;
+  }
+  h1 { font-size: 20px; margin: 0 0 4px; }
+  .subtitle { color: var(--muted); font-size: 13px; margin-bottom: 4px; }
+  .revnote {
+    font-size: 12px; color: var(--ink); background: #fff; border: 1px solid #dde1e5;
+    border-radius: 8px; padding: 8px 12px; display: inline-block; margin: 6px 0 24px;
+  }
+  .revnote b { color: #1a7f37; }
+  h2 { font-size: 14px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); margin: 36px 0 12px; }
+
+  /* ===== chat backdrop (host area) ===== */
+  .chat-backdrop {
+    position: relative;
+    border: 2px dashed var(--line);
+    border-radius: 12px;
+    background:
+      repeating-linear-gradient(0deg, transparent, transparent 27px, #e4e7ea 27px, #e4e7ea 28px),
+      #fdfdfe;
+    min-height: 560px;
+    padding: 24px;
+    display: flex;
+    gap: 32px;
+    align-items: flex-start;
+  }
+  .chat-placeholder {
+    flex: 1;
+    color: #c3c9cf;
+    font-size: 13px;
+    padding-top: 8px;
+  }
+  .chat-placeholder .bubble {
+    border: 1px solid #dde1e5;
+    background: #fff;
+    border-radius: 10px;
+    padding: 10px 14px;
+    margin-bottom: 12px;
+    width: 70%;
+    color: #aab1b8;
+  }
+
+  /* ===== the dock card ===== */
+  .card {
+    position: sticky;
+    top: 0;
+    margin-left: auto;
+    width: 290px;
+    background: #fff;
+    border: 1.5px solid #8a9097;
+    border-radius: 10px;
+    box-shadow: 0 4px 16px rgba(0,0,0,.12);
+    padding: 12px 14px;
+    font-size: 12.5px;
+    line-height: 1.45;
+    flex-shrink: 0;
+  }
+  .resize-h {
+    position: absolute; left: -1px; top: 6px; bottom: 6px; width: 7px;
+    border-right: 1px dashed var(--line);
+  }
+  .resize-v {
+    position: absolute; top: -1px; left: 6px; right: 6px; height: 7px;
+    border-bottom: 1px dashed var(--line);
+  }
+  .header-row {
+    display: flex; align-items: center; gap: 6px;
+    cursor: grab;
+    padding-bottom: 4px;
+  }
+  .k-glyph {
+    display: inline-flex; align-items: center; justify-content: center;
+    width: 16px; height: 16px; border-radius: 4px;
+    background: #9aa1a8; color: #fff; font-weight: 700; font-size: 11px;
+  }
+  .plan-chip { font-size: 9.5px; letter-spacing: .06em; color: var(--muted); }
+  .chevron { margin-left: 2px; color: var(--muted); }
+  .refresh { margin-left: auto; color: var(--muted); font-size: 14px; }
+
+  .section-label {
+    font-size: 9.5px; letter-spacing: .06em; text-transform: uppercase;
+    color: var(--muted); margin-top: 12px;
+  }
+  .quota-row { margin-top: 8px; }
+  .quota-head { display: flex; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
+  .quota-head strong { font-size: 12.5px; }
+  .reset-stamp { color: var(--muted); font-size: 10px; }
+  .quota-line { color: var(--muted); font-size: 10.5px; margin-top: 2px; font-variant-numeric: tabular-nums; }
+
+  /* bar kuota + % inline di kanan */
+  .meter-row { display: flex; align-items: center; gap: 8px; margin-top: 5px; }
+  .meter {
+    flex: 1;
+    height: 4px; border-radius: 3px;
+    background: rgba(0,0,0,.08); overflow: hidden;
+  }
+  .meter > div { height: 100%; background: var(--amber); border-radius: 3px; }
+  .pct {
+    width: 34px; text-align: right; flex-shrink: 0;
+    font-weight: 600; font-size: 11px; font-variant-numeric: tabular-nums;
+  }
+
+  .stat-row { display: flex; gap: 8px; margin-top: 8px; }
+  .stat-box {
+    flex: 1; background: var(--soft); border-radius: 8px; padding: 8px;
+    display: flex; flex-direction: column; gap: 2px; min-width: 0;
+  }
+  .stat-box strong { font-size: 14px; }
+  .stat-box span { color: var(--muted); font-size: 9.5px; }
+
+  .model-list { margin-top: 6px; max-height: 90px; overflow: hidden; }
+  .model-row {
+    display: flex; justify-content: space-between; gap: 8px;
+    font-size: 10.5px; padding: 2px 0;
+  }
+  .model-row .muted { color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .model-row .nums { white-space: nowrap; }
+
+  /* header section dengan total inline di kanan (30 Hari & Hari Ini) */
+  .sec-head {
+    display: flex; justify-content: space-between; align-items: baseline; gap: 8px;
+    margin-top: 12px;
+  }
+  .sec-total { color: var(--muted); font-size: 10px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+
+  /* ===== callouts ===== */
+  .callout {
+    position: absolute;
+    width: 18px; height: 18px; border-radius: 50%;
+    background: #2f6fed; color: #fff;
+    font-size: 11px; font-weight: 600;
+    display: flex; align-items: center; justify-content: center;
+    z-index: 5;
+  }
+  .legend { font-size: 13px; max-width: 420px; }
+  .legend ol { margin: 0; padding-left: 0; list-style: none; }
+  .legend li { display: flex; gap: 10px; margin-bottom: 12px; align-items: flex-start; }
+  .legend .n {
+    flex-shrink: 0; width: 18px; height: 18px; border-radius: 50%;
+    background: #2f6fed; color: #fff; font-size: 11px; font-weight: 600;
+    display: inline-flex; align-items: center; justify-content: center; margin-top: 1px;
+  }
+  .legend b { display: block; }
+  .legend .desc { color: var(--muted); font-size: 12px; }
+
+  /* ===== states row ===== */
+  .states { display: flex; gap: 24px; flex-wrap: wrap; }
+  .state-item { display: flex; flex-direction: column; gap: 8px; }
+  .state-label { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: .05em; }
+  .mini-card {
+    width: 250px; background: #fff; border: 1.5px solid #8a9097;
+    border-radius: 10px; padding: 12px 14px; font-size: 12px; box-shadow: 0 3px 10px rgba(0,0,0,.08);
+  }
+  .mini-card.dimmed { opacity: .5; }
+  .error-row { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+  .error-row .err { font-size: 11px; }
+  .retry-btn { border: 1px solid var(--line); background: var(--box); border-radius: 6px; padding: 2px 10px; font-size: 11px; }
+
+  /* tool output */
+  .tool-out {
+    background: #fff; border: 1.5px solid #8a9097; border-radius: 10px;
+    padding: 0; max-width: 640px; box-shadow: 0 3px 10px rgba(0,0,0,.08); overflow: hidden;
+  }
+  .tool-out .tool-head {
+    background: var(--soft); padding: 8px 14px; font-size: 11px; color: var(--muted);
+    border-bottom: 1px solid #dde1e5; font-family: Consolas, monospace;
+  }
+  .tool-out pre {
+    margin: 0; padding: 14px; font-family: Consolas, monospace; font-size: 11.5px;
+    white-space: pre-wrap; color: var(--ink);
+  }
+</style>
+</head>
+<body>
+
+<h1>Wireframe — Dock "Kenari Usage" (rev. 6)</h1>
+<div class="subtitle">Varian A (stacked) + penyesuaian rev. 2 &amp; 3. Kartu mengambang di kanan-bawah · drag header untuk pindah · auto-poll tiap 60 detik · lebar default 270px.</div>
+<div class="revnote">
+  Perubahan rev. 6: "reqs" → <b>"req"</b> — dipakai sebagai satuan invariant, konsisten dengan "tok" di sebelahnya
+</div>
+
+<div class="chat-backdrop">
+  <div class="chat-placeholder">
+    <div class="bubble">pesan user…</div>
+    <div class="bubble">balasan model…</div>
+    <div class="bubble">…</div>
+  </div>
+
+  <div class="card">
+    <div class="resize-h"></div>
+    <div class="resize-v"></div>
+
+    <div class="header-row">
+      <span class="k-glyph">k</span>
+      <strong>Kenari</strong>
+      <span class="plan-chip">KREATOR</span>
+      <span class="chevron">⌄</span>
+      <span class="refresh">⟳</span>
+    </div>
+
+    <div class="section-label">Kuota Paket</div>
+
+    <div class="quota-row">
+      <div class="quota-head"><strong>Mingguan</strong><span class="reset-stamp">reset 14 Sep 02:37</span></div>
+      <div class="quota-line">Terpakai Rp 136.861 · Sisa Rp 13.139</div>
+      <div class="meter-row">
+        <div class="meter"><div style="width:91%"></div></div>
+        <span class="pct">91%</span>
+      </div>
+    </div>
+
+    <div class="quota-row">
+      <div class="quota-head"><strong>Bulanan</strong><span class="reset-stamp">reset 7 Oct 02:37</span></div>
+      <div class="quota-line">Terpakai Rp 136.861 · Sisa Rp 463.139</div>
+      <div class="meter-row">
+        <div class="meter"><div style="width:23%"></div></div>
+        <span class="pct">23%</span>
+      </div>
+    </div>
+
+    <div class="section-label">Ringkasan</div>
+    <div class="stat-row">
+      <div class="stat-box"><strong>3.5rb</strong><span>Total Request</span></div>
+      <div class="stat-box"><strong>295.1M</strong><span>Total Token</span></div>
+    </div>
+
+    <div class="sec-head">
+      <span class="section-label" style="margin-top:0">Penggunaan 30 Hari</span>
+      <span class="sec-total">3.537 req · 295.1M tok</span>
+    </div>
+    <div class="model-list">
+      <div class="model-row">
+        <span class="muted">glm-5-3-flash</span>
+        <span class="nums"><strong>3.527 req</strong> · 295.1M tok</span>
+      </div>
+      <div class="model-row">
+        <span class="muted">tiny</span>
+        <span class="nums"><strong>10 req</strong> · 300 tok</span>
+      </div>
+    </div>
+
+    <div class="sec-head">
+      <span class="section-label" style="margin-top:0">Penggunaan Hari Ini</span>
+      <span class="sec-total">120 req · 890.3rb tok</span>
+    </div>
+    <div class="model-list">
+      <div class="model-row">
+        <span class="muted">glm-5-3-flash</span>
+        <span class="nums"><strong>120 req</strong> · 890.3rb tok</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- callouts -->
+  <div class="callout" style="top:14px;  right:322px;">1</div>
+  <div class="callout" style="top:14px;  right:196px;">2</div>
+  <div class="callout" style="top:14px;  right:158px;">3</div>
+  <div class="callout" style="top:206px; right:322px;">4</div>
+  <div class="callout" style="top:300px; right:322px;">5</div>
+  <div class="callout" style="top:372px; right:322px;">6</div>
+  <div class="callout" style="top:446px; right:322px;">7</div>
+  <div class="callout" style="top:80px;  right:322px;">8</div>
+
+  <div class="legend">
+    <ol>
+      <li><span class="n">1</span><div><b>Header — drag handle</b><span class="desc">Tarik untuk memindah kartu ke mana saja; posisi tersimpan di <code>localStorage</code>.</span></div></li>
+      <li><span class="n">2</span><div><b>Chevron ⌄</b><span class="desc">Collapse / expand isi kartu (header saja yang tersisa saat collapse).</span></div></li>
+      <li><span class="n">3</span><div><b>Refresh ⟳</b><span class="desc">Fetch manual (debounce 1 dtk, abort request lama). Selain itu auto-poll tiap 60 detik.</span></div></li>
+      <li><span class="n">4</span><div><b>Kuota Paket</b><span class="desc">Dari API resmi <code>GET /v1/account/quota</code>: Terpakai / Sisa Rupiah <b>dengan pemisah ribuan</b> ("Rp 136.861"), progress bar dengan % inline di kanan, tanggal reset di kanan label.</span></div></li>
+      <li><span class="n">5</span><div><b>Ringkasan</b><span class="desc">Total request &amp; token 30 hari (format ringkas: rb / jt / M).</span></div></li>
+      <li><span class="n">6</span><div><b>Penggunaan 30 Hari</b><span class="desc">Total "3.537 req · 295.1M tok" <b>inline di kanan header</b>; di bawahnya daftar per model (dari MCP <code>kenari_usage</code>): jumlah request (format "&lt;n&gt; req") + <b>total token</b> (in + out digabung, tanpa pemisahan). Bisa discroll.</span></div></li>
+      <li><span class="n">7</span><div><b>Penggunaan Hari Ini</b><span class="desc">Total pemakaian inline di kanan header tanpa kata "hari ini" ("120 req · 890.3rb tok"); dihitung client-side dari baseline awal hari (localStorage). Kosong → "Belum ada pemakaian hari ini".</span></div></li>
+      <li><span class="n">8</span><div><b>Resize</b><span class="desc">Tepi kiri &amp; kanan = lebar (200–520px), tepi atas &amp; bawah = tinggi (double-click tepi atas/bawah kembali auto). Ukuran tersimpan di localStorage.</span></div></li>
+    </ol>
+  </div>
+</div>
+
+<h2>Kondisi lain</h2>
+<div class="states">
+  <div class="state-item">
+    <span class="state-label">Collapsed</span>
+    <div class="mini-card">
+      <div class="header-row">
+        <span class="k-glyph">k</span><strong>Kenari</strong>
+        <span class="plan-chip">KREATOR</span><span class="chevron">⌃</span>
+        <span class="refresh">⟳</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="state-item">
+    <span class="state-label">Error (mis. API key invalid) — data terakhir redup</span>
+    <div class="mini-card dimmed">
+      <div class="header-row">
+        <span class="k-glyph">k</span><strong>Kenari</strong>
+        <span class="plan-chip">KREATOR</span><span class="chevron">⌄</span>
+        <span class="refresh">⟳</span>
+      </div>
+    </div>
+    <div class="mini-card" style="margin-top:-14px">
+      <div class="error-row">
+        <span class="err">Kenari usage: invalid API key (401)…</span>
+        <span class="retry-btn">Retry</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="state-item">
+    <span class="state-label">Hari ini belum ada pemakaian</span>
+    <div class="mini-card">
+      <div class="sec-head" style="margin-top:0">
+        <span class="section-label" style="margin-top:0">Penggunaan Hari Ini</span>
+      </div>
+      <div class="model-row" style="margin-top:4px"><span class="muted">Belum ada pemakaian hari ini</span></div>
+    </div>
+  </div>
+</div>
+
+<h2>Output tool model <code>kenari_usage</code> (kartu tool di chat)</h2>
+<div class="tool-out">
+  <div class="tool-head">kenari_usage →</div>
+  <pre>Plan Kreator — Week used Rp 136861 / remaining Rp 13139 (resets 14 Sep 02:37);
+Month used Rp 136861 / remaining Rp 463139 (resets 7 Oct 02:37);
+30d totals: 3537 requests, 295083857 tokens across 2 models</pre>
+</div>
+
+<div class="subtitle" style="margin-top:24px">Catatan: pemformatan Rupiah di atas hanya untuk kartu dock (UI). Teks output tool <code>kenari_usage</code> tetap memakai <code>formatRp</code> tanpa pemisah — kalau mau disamakan juga, itu perubahan terpisah di <code>src/quota.ts</code>. Angka contoh diambil dari fixture test.</div>
+
+</body>
+</html>

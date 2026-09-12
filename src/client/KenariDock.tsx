@@ -39,7 +39,7 @@ const DISPLAY_TICK_MS = 1000
 /** Auto-poll cadence (ms) when the host payload omits pollIntervalMs. */
 const DEFAULT_POLL_INTERVAL_MS = 60000
 
-/** Card width (px) — default/fallback; user-resizable 200–520 via left-edge handle. */
+/** Card width (px) — default/fallback; user-resizable 200–520 via the left/right edge handles. */
 const CARD_WIDTH = 270
 const CARD_WIDTH_MIN = 200
 const CARD_WIDTH_MAX = 520
@@ -56,7 +56,7 @@ const POSITION_STORAGE_KEY = 'kenari-usage-dock-position'
 const WIDTH_STORAGE_KEY = 'kenari-usage-dock-width'
 
 /** Card height (px) — null = auto/content-driven (default). User-resizable
- *  160–min(800, viewport-32) via the top-edge handle. */
+ *  160–min(800, viewport-32) via the top/bottom edge handles. */
 const CARD_HEIGHT_MIN = 160
 const CARD_HEIGHT_MAX = 800
 
@@ -166,9 +166,6 @@ const DAY_BASELINE_STORAGE_KEY = 'kenari-usage-day-baseline'
 interface DayBaselinePerModel {
   requests: number
   tokens: number
-  /** Split counters; absent on baselines written before the in/out split. */
-  input_tok?: number
-  output_tok?: number
 }
 
 /**
@@ -188,13 +185,8 @@ interface DayBaseline {
 interface TodayUsage {
   requests: number
   tokens: number
-  /**
-   * Models with today requests > 0, sorted desc by today tokens. `input` /
-   * `output` are null when the stored baseline predates the in/out split
-   * (only its combined `tokens` is diffable) — renderers fall back to the
-   * combined figure rather than inventing a split.
-   */
-  models: Array<{ model: string; requests: number; tokens: number; input: number | null; output: number | null }>
+  /** Models with today requests > 0, sorted desc by today tokens. */
+  models: Array<{ model: string; requests: number; tokens: number }>
 }
 
 /** Local calendar day stamp `YYYY-MM-DD` (local time, not UTC). */
@@ -240,7 +232,7 @@ function saveDayBaseline(baseline: DayBaseline): void {
 function baselineFromUsage(usage: DockUsage, date: string): DayBaseline {
   const perModel: Record<string, DayBaselinePerModel> = {}
   for (const m of usage.models) {
-    perModel[m.model] = { requests: m.requests, tokens: m.input_tok + m.output_tok, input_tok: m.input_tok, output_tok: m.output_tok }
+    perModel[m.model] = { requests: m.requests, tokens: m.input_tok + m.output_tok }
   }
   return { date, total_requests: usage.total_requests, total_tokens: usage.total_tokens, perModel }
 }
@@ -262,8 +254,6 @@ function diffToday(usage: DockUsage, baseline: DayBaseline): TodayUsage {
         model: m.model,
         requests,
         tokens: clamp0(m.input_tok + m.output_tok - base.tokens),
-        input: typeof base.input_tok === 'number' ? clamp0(m.input_tok - base.input_tok) : null,
-        output: typeof base.output_tok === 'number' ? clamp0(m.output_tok - base.output_tok) : null,
       })
     }
   }
@@ -275,9 +265,14 @@ function diffToday(usage: DockUsage, baseline: DayBaseline): TodayUsage {
   }
 }
 
-/** Raw rupiah as `Rp 143239` (plain integer, no separators). */
-function formatRp(n: number): string {
-  return `Rp ${n}`
+/** Integer with Indonesian dot thousand separators: 3527 → `3.527`. */
+function formatInt(n: number): string {
+  return `${Math.trunc(n)}`.replace(/\B(?=(\d{3})+(?!\d))/g, '.')
+}
+
+/** Raw rupiah as `Rp 136.861` (integer, Indonesian dot separators). */
+function formatRpId(n: number): string {
+  return `Rp ${formatInt(n)}`
 }
 
 /** Fraction of the window consumed, clamped to [0, 1]. */
@@ -354,8 +349,8 @@ export function KenariDock() {
   const mounted = useRef(true)
   const cardRef = useRef<HTMLDivElement | null>(null)
   const dragOffset = useRef<{ x: number; y: number } | null>(null)
-  const resizeStart = useRef<{ startX: number; startWidth: number; startLeft: number | null; startTop: number } | null>(null)
-  const resizeVStart = useRef<{ startY: number; startHeight: number; startTop: number | null } | null>(null)
+  const resizeStart = useRef<{ edge: 'left' | 'right'; startX: number; startWidth: number; startLeft: number | null; startTop: number } | null>(null)
+  const resizeVStart = useRef<{ edge: 'top' | 'bottom'; startY: number; startHeight: number; startTop: number | null } | null>(null)
 
   // Drag-to-reposition: pointerdown on the header starts tracking; move/up
   // listen on window so the drag keeps working even if the pointer leaves
@@ -400,9 +395,13 @@ export function KenariDock() {
   const handleResizeMove = useCallback((e: PointerEvent) => {
     const rs = resizeStart.current
     if (rs === null) return
-    const newWidth = clampCardWidth(rs.startWidth + (rs.startX - e.clientX))
+    const delta = rs.edge === 'left' ? rs.startX - e.clientX : e.clientX - rs.startX
+    const newWidth = clampCardWidth(rs.startWidth + delta)
     setCardWidth(newWidth)
-    if (rs.startLeft !== null) {
+    // Only the left edge needs anchor math (keep the right edge fixed); a
+    // right-edge drag grows away from the fixed opposite edge in both anchor
+    // modes (CSS left when top-anchored, CSS right when bottom-right default).
+    if (rs.edge === 'left' && rs.startLeft !== null) {
       const newLeft = rs.startLeft + rs.startWidth - newWidth
       setPosition((pos) => ({ top: pos?.top ?? rs.startTop, left: newLeft }))
     }
@@ -424,9 +423,10 @@ export function KenariDock() {
   }, [handleResizeMove])
 
   const handleResizePointerDown = useCallback(
-    (e: ReactPointerEvent<HTMLDivElement>) => {
+    (edge: 'left' | 'right') => (e: ReactPointerEvent<HTMLDivElement>) => {
       e.stopPropagation()
       resizeStart.current = {
+        edge,
         startX: e.clientX,
         startWidth: cardWidth,
         startLeft: position?.left ?? null,
@@ -448,9 +448,12 @@ export function KenariDock() {
   const handleResizeVMove = useCallback((e: PointerEvent) => {
     const rs = resizeVStart.current
     if (rs === null) return
-    const newHeight = clampCardHeight(rs.startHeight + (rs.startY - e.clientY))
+    const delta = rs.edge === 'top' ? rs.startY - e.clientY : e.clientY - rs.startY
+    const newHeight = clampCardHeight(rs.startHeight + delta)
     setCardHeight(newHeight)
-    if (rs.startTop !== null) {
+    // Only the top edge needs anchor math (keep the bottom edge fixed); a
+    // bottom-edge drag grows away from the fixed opposite edge in both modes.
+    if (rs.edge === 'top' && rs.startTop !== null) {
       const newTop = rs.startTop + rs.startHeight - newHeight
       setPosition((pos) => ({ top: newTop, left: pos?.left ?? 0 }))
     }
@@ -472,10 +475,11 @@ export function KenariDock() {
   }, [handleResizeVMove])
 
   const handleResizeVPointerDown = useCallback(
-    (e: ReactPointerEvent<HTMLDivElement>) => {
+    (edge: 'top' | 'bottom') => (e: ReactPointerEvent<HTMLDivElement>) => {
       e.stopPropagation()
       if (cardRef.current === null) return
       resizeVStart.current = {
+        edge,
         startY: e.clientY,
         startHeight: cardRef.current.offsetHeight,
         startTop: position?.top ?? null,
@@ -599,7 +603,6 @@ export function KenariDock() {
   const dimmed = error !== null && snap !== null
   const plan = snap?.payload.plan ?? null
   const usage = snap?.payload.usage ?? null
-  const balanceRp = snap?.payload.balance_rp ?? null
   // Today usage = current 30-day payload − start-of-day baseline. Hidden
   // until both a payload and a same-day baseline exist; the first fetch of
   // a new day installs the baseline so the diff starts at 0, never at a
@@ -685,6 +688,23 @@ export function KenariDock() {
     marginTop: 12,
   }
 
+  /** Header row for sections that carry an inline total on the right
+   *  (Penggunaan 30 Hari / Penggunaan Hari Ini). */
+  const secHeadStyle: CSSProperties = {
+    display: 'flex',
+    alignItems: 'baseline',
+    justifyContent: 'space-between',
+    gap: 8,
+    marginTop: 12,
+  }
+
+  const secTotalStyle: CSSProperties = {
+    ...mutedStyle,
+    fontSize: '0.78em',
+    fontVariantNumeric: 'tabular-nums',
+    whiteSpace: 'nowrap',
+  }
+
   const buttonStyle: CSSProperties = {
     color: 'inherit',
     font: 'inherit',
@@ -698,9 +718,26 @@ export function KenariDock() {
   const trackStyle: CSSProperties = {
     height: 4,
     borderRadius: 3,
-    marginTop: 6,
+    flex: 1,
     background: METER_TRACK_COLOR,
     overflow: 'hidden',
+  }
+
+  /** Meter row: thin bar filling the row with the inline % pinned right. */
+  const meterRowStyle: CSSProperties = {
+    display: 'flex',
+    alignItems: 'center',
+    gap: 8,
+    marginTop: 6,
+  }
+
+  const pctStyle: CSSProperties = {
+    width: 34,
+    textAlign: 'right',
+    flexShrink: 0,
+    fontWeight: 600,
+    fontSize: '0.9em',
+    fontVariantNumeric: 'tabular-nums',
   }
 
   const statBoxStyle: CSSProperties = {
@@ -714,7 +751,8 @@ export function KenariDock() {
     minWidth: 0,
   }
 
-  /** One quota group row (Mingguan / Bulanan): label + reset stamp, used/sisa line, thin bar. */
+  /** One quota group row (Mingguan / Bulanan): label + reset stamp, used/sisa
+   *  line, then a meter row with the inline % pinned to the right. */
   const quotaRow = (label: string, win: DockWindow) => (
     <div>
       <div style={quotaLabelRowStyle}>
@@ -722,17 +760,20 @@ export function KenariDock() {
         <span style={{ ...mutedStyle, fontSize: '0.78em' }}>{`reset ${formatResetShort(win.resets_at)}`}</span>
       </div>
       <div style={{ ...mutedStyle, fontSize: '0.8em', marginTop: 3 }}>
-        {`Terpakai ${formatRp(win.used_rp)} · Sisa ${formatRp(win.remaining_rp)} · ${Math.round(usedFrac(win) * 100)}%`}
+        {`Terpakai ${formatRpId(win.used_rp)} · Sisa ${formatRpId(win.remaining_rp)}`}
       </div>
-      <div style={trackStyle}>
-        <div
-          style={{
-            height: '100%',
-            borderRadius: 3,
-            width: `${usedFrac(win) * 100}%`,
-            background: METER_FILL_COLOR,
-          }}
-        />
+      <div style={meterRowStyle}>
+        <div style={trackStyle}>
+          <div
+            style={{
+              height: '100%',
+              borderRadius: 3,
+              width: `${usedFrac(win) * 100}%`,
+              background: METER_FILL_COLOR,
+            }}
+          />
+        </div>
+        <span style={pctStyle}>{`${Math.round(usedFrac(win) * 100)}%`}</span>
       </div>
     </div>
   )
@@ -741,9 +782,9 @@ export function KenariDock() {
     <div ref={cardRef} style={cardStyle} data-testid="kenari-dock">
       <div
         data-testid="kenari-resize"
-        title="Resize card width"
+        title="Resize card width (left edge)"
         aria-label="Resize card width"
-        onPointerDown={handleResizePointerDown}
+        onPointerDown={handleResizePointerDown('left')}
         style={{
           position: 'absolute',
           top: 0,
@@ -755,14 +796,45 @@ export function KenariDock() {
         }}
       />
       <div
+        data-testid="kenari-resize-r"
+        title="Resize card width (right edge)"
+        aria-label="Resize card width"
+        onPointerDown={handleResizePointerDown('right')}
+        style={{
+          position: 'absolute',
+          top: 0,
+          bottom: 0,
+          right: 0,
+          width: 8,
+          cursor: 'ew-resize',
+          touchAction: 'none',
+        }}
+      />
+      <div
         data-testid="kenari-resize-v"
-        title="Resize card height — double-click to reset auto height"
+        title="Resize card height (top edge) — double-click to reset auto height"
         aria-label="Resize card height"
-        onPointerDown={handleResizeVPointerDown}
+        onPointerDown={handleResizeVPointerDown('top')}
         onDoubleClick={handleResizeVDoubleClick}
         style={{
           position: 'absolute',
           top: 0,
+          left: 0,
+          right: 0,
+          height: 8,
+          cursor: 'ns-resize',
+          touchAction: 'none',
+        }}
+      />
+      <div
+        data-testid="kenari-resize-b"
+        title="Resize card height (bottom edge) — double-click to reset auto height"
+        aria-label="Resize card height"
+        onPointerDown={handleResizeVPointerDown('bottom')}
+        onDoubleClick={handleResizeVDoubleClick}
+        style={{
+          position: 'absolute',
+          bottom: 0,
           left: 0,
           right: 0,
           height: 8,
@@ -862,23 +934,21 @@ export function KenariDock() {
                       <span style={{ ...mutedStyle, fontSize: '0.75em' }}>Total Token</span>
                     </div>
                   </div>
-                  {balanceRp !== null && (
-                    <div data-testid="kenari-balance" style={{ ...mutedStyle, fontSize: '0.8em' }}>
-                      {`Saldo ${formatRp(balanceRp)}`}
-                    </div>
-                  )}
                 </div>
               )}
               {usage !== null && (
                 <div data-testid="kenari-models" style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                  <span style={sectionLabelBlockStyle}>Penggunaan 30 Hari</span>
+                  <div style={secHeadStyle}>
+                    <span style={sectionLabelStyle}>Penggunaan 30 Hari</span>
+                    <span style={secTotalStyle}>{`${formatInt(usage.total_requests)} req · ${formatCompact(usage.total_tokens)} tok`}</span>
+                  </div>
                   <div style={{ maxHeight: 180, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 2 }}>
                     {usage.models.map((m) => (
                       <div key={m.model} style={modelRowStyle}>
                         <span style={{ ...mutedStyle, overflow: 'hidden', textOverflow: 'ellipsis' }}>{m.model}</span>
                         <span style={{ whiteSpace: 'nowrap', fontVariantNumeric: 'tabular-nums' }}>
-                          <strong>{`${m.requests}x`}</strong>
-                          {` in ${formatCompact(m.input_tok)} · out ${formatCompact(m.output_tok)} tok`}
+                          <strong>{`${formatInt(m.requests)} req`}</strong>
+                          {` · ${formatCompact(m.input_tok + m.output_tok)} tok`}
                         </span>
                       </div>
                     ))}
@@ -887,26 +957,24 @@ export function KenariDock() {
               )}
               {usage !== null && today !== null && (
                 <div data-testid="kenari-today" style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                  <span style={sectionLabelBlockStyle}>Penggunaan Hari Ini</span>
+                  <div style={secHeadStyle}>
+                    <span style={sectionLabelStyle}>Penggunaan Hari Ini</span>
+                    {today.models.length > 0 && (
+                      <span style={secTotalStyle}>{`${formatInt(today.requests)} req · ${formatCompact(today.tokens)} tok`}</span>
+                    )}
+                  </div>
                   {today.models.length > 0 ? (
-                    <>
-                      <div style={{ ...mutedStyle, fontSize: '0.8em' }}>
-                        {`${formatCompact(today.requests)} req · ${formatCompact(today.tokens)} tok hari ini`}
-                      </div>
-                      <div style={{ maxHeight: 180, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 2 }}>
-                        {today.models.map((m) => (
-                          <div key={m.model} style={modelRowStyle}>
-                            <span style={{ ...mutedStyle, overflow: 'hidden', textOverflow: 'ellipsis' }}>{m.model}</span>
-                            <span style={{ whiteSpace: 'nowrap', fontVariantNumeric: 'tabular-nums' }}>
-                              <strong>{`${m.requests}x`}</strong>
-                              {m.input !== null && m.output !== null
-                                ? ` in ${formatCompact(m.input)} · out ${formatCompact(m.output)} tok`
-                                : ` ${formatCompact(m.tokens)} tok`}
-                            </span>
-                          </div>
-                        ))}
-                      </div>
-                    </>
+                    <div style={{ maxHeight: 180, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 2 }}>
+                      {today.models.map((m) => (
+                        <div key={m.model} style={modelRowStyle}>
+                          <span style={{ ...mutedStyle, overflow: 'hidden', textOverflow: 'ellipsis' }}>{m.model}</span>
+                          <span style={{ whiteSpace: 'nowrap', fontVariantNumeric: 'tabular-nums' }}>
+                            <strong>{`${formatInt(m.requests)} req`}</strong>
+                            {` · ${formatCompact(m.tokens)} tok`}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
                   ) : (
                     <div data-testid="kenari-today-empty" style={{ ...modelRowStyle, ...mutedStyle }}>
                       <span>Belum ada pemakaian hari ini</span>

@@ -1,0 +1,393 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Alternatif Layout — dsh-kenari-usage dock</title>
+<style>
+  :root {
+    --ink: #1f2328;
+    --muted: #6a737d;
+    --line: #b9bfc7;
+    --soft: #f0f2f4;
+    --amber: #e3a53d;
+    --track: rgba(0,0,0,.08);
+    --accent: #2f6fed;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 32px;
+    font-family: "Segoe UI", system-ui, -apple-system, sans-serif;
+    color: var(--ink); background: #eef0f3;
+  }
+  h1 { font-size: 20px; margin: 0 0 4px; }
+  .subtitle { color: var(--muted); font-size: 13px; margin-bottom: 8px; max-width: 760px; }
+  .note { font-size: 12px; color: var(--muted); background: #fff; border: 1px solid #dde1e5; border-radius: 8px; padding: 8px 12px; display: inline-block; margin-bottom: 24px; }
+
+  .grid { display: flex; flex-wrap: wrap; gap: 28px; align-items: flex-start; }
+
+  .variant {
+    background: #fdfdfe; border: 1.5px solid var(--line); border-radius: 12px;
+    padding: 18px; width: 420px;
+    display: flex; flex-direction: column; gap: 10px;
+  }
+  .variant.reco { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(47,111,237,.12); }
+  .v-head { display: flex; align-items: center; gap: 10px; }
+  .v-tag {
+    width: 24px; height: 24px; border-radius: 6px; background: #3a4046; color: #fff;
+    display: inline-flex; align-items: center; justify-content: center; font-weight: 700; font-size: 13px;
+  }
+  .variant.reco .v-tag { background: var(--accent); }
+  .v-head h3 { margin: 0; font-size: 15px; }
+  .v-size { margin-left: auto; font-size: 11px; color: var(--muted); background: var(--soft); border-radius: 6px; padding: 2px 8px; }
+  .v-desc { margin: 0; font-size: 12.5px; color: var(--muted); }
+  .card-zone {
+    border: 2px dashed var(--line); border-radius: 10px; background: #f7f8f9;
+    padding: 22px 16px; display: flex; justify-content: center; align-items: flex-start; min-height: 120px;
+  }
+  .pc { display: flex; gap: 14px; font-size: 12px; margin: 0; padding: 0; list-style: none; flex-wrap: wrap; }
+  .pc li { margin: 0; }
+  .pc .plus { color: #1a7f37; }
+  .pc .minus { color: #c0392b; }
+  .reco-badge {
+    margin-left: auto; font-size: 10.5px; font-weight: 700; letter-spacing: .05em; text-transform: uppercase;
+    color: #fff; background: var(--accent); border-radius: 6px; padding: 3px 8px;
+  }
+
+  /* ============ kartu dasar (dipakai lintas varian) ============ */
+  .card {
+    background: #fff; border: 1.5px solid #8a9097; border-radius: 10px;
+    box-shadow: 0 3px 12px rgba(0,0,0,.10);
+    padding: 12px 14px; font-size: 12.5px; line-height: 1.45;
+  }
+  .hdr { display: flex; align-items: center; gap: 6px; }
+  .k-glyph {
+    display: inline-flex; align-items: center; justify-content: center;
+    width: 16px; height: 16px; border-radius: 4px;
+    background: #9aa1a8; color: #fff; font-weight: 700; font-size: 11px; flex-shrink: 0;
+  }
+  .plan-chip { font-size: 9.5px; letter-spacing: .06em; color: var(--muted); }
+  .refresh { margin-left: auto; color: var(--muted); font-size: 14px; }
+  .chev { color: var(--muted); }
+  .sec { font-size: 9.5px; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); margin: 10px 0 2px; }
+  .muted { color: var(--muted); }
+  .num { font-variant-numeric: tabular-nums; }
+
+  /* bar kuota */
+  .meter { height: 4px; border-radius: 3px; margin-top: 4px; background: var(--track); overflow: hidden; }
+  .meter > div { height: 100%; background: var(--amber); border-radius: 3px; }
+
+  /* ===== A: stacked (sekarang) ===== */
+  .qa { margin-top: 7px; }
+  .qa .head { display: flex; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
+  .qa .line { color: var(--muted); font-size: 10.5px; margin-top: 2px; }
+  .stats { display: flex; gap: 8px; margin-top: 6px; }
+  .stat { flex: 1; background: var(--soft); border-radius: 8px; padding: 7px 8px; display: flex; flex-direction: column; gap: 1px; }
+  .stat strong { font-size: 13.5px; }
+  .stat span { color: var(--muted); font-size: 9.5px; }
+  .mrow { display: flex; justify-content: space-between; gap: 8px; font-size: 10.5px; padding: 2px 0; }
+  .mrow .m { color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .mrow .v { white-space: nowrap; }
+
+  /* ===== B: tabs ===== */
+  .seg { display: flex; gap: 4px; background: var(--soft); border-radius: 8px; padding: 3px; margin-top: 8px; }
+  .seg button {
+    flex: 1; border: none; background: transparent; border-radius: 6px;
+    font: inherit; font-size: 10.5px; padding: 4px 0; color: var(--muted); cursor: pointer;
+  }
+  .seg button.on { background: #fff; color: var(--ink); font-weight: 600; box-shadow: 0 1px 2px rgba(0,0,0,.12); }
+  .inline-stats { display: flex; gap: 6px; margin-top: 8px; font-size: 10.5px; color: var(--muted); }
+  .inline-stats b { color: var(--ink); }
+  .tabpane { margin-top: 9px; }
+
+  /* ===== C: rings ===== */
+  .rings { display: flex; gap: 18px; justify-content: center; margin-top: 10px; }
+  .ring { text-align: center; }
+  .donut {
+    width: 62px; height: 62px; border-radius: 50%; margin: 0 auto;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .donut > div {
+    width: 46px; height: 46px; border-radius: 50%; background: #fff;
+    display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 12.5px;
+  }
+  .ring .cap { font-size: 10px; color: var(--muted); margin-top: 4px; }
+  .stat3 { display: flex; gap: 6px; margin-top: 10px; }
+  .stat3 .stat { text-align: center; align-items: center; }
+
+  /* ===== D: tabel kompak ===== */
+  .qbar-row { display: flex; align-items: center; gap: 8px; margin-top: 7px; font-size: 10.5px; }
+  .qbar-row .lbl { width: 58px; flex-shrink: 0; font-weight: 600; font-size: 11px; }
+  .qbar-row .meter { flex: 1; margin-top: 0; }
+  .qbar-row .pct { width: 30px; text-align: right; font-weight: 600; }
+  .qbar-row .rst { color: var(--muted); width: 86px; text-align: right; flex-shrink: 0; font-size: 10px; }
+  table.usg { width: 100%; border-collapse: collapse; margin-top: 4px; font-size: 10.5px; }
+  table.usg th {
+    text-align: right; font-weight: 600; color: var(--muted); font-size: 9px;
+    text-transform: uppercase; letter-spacing: .05em; padding: 3px 0; border-bottom: 1px solid #e3e6e9;
+  }
+  table.usg th:first-child, table.usg td:first-child { text-align: left; }
+  table.usg td { padding: 3px 0; border-bottom: 1px solid #f0f2f4; text-align: right; }
+  table.usg tr.tot td { border-bottom: none; border-top: 1px solid #e3e6e9; color: var(--muted); font-weight: 600; }
+  table.usg td:first-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 110px; }
+  .today-strip {
+    margin-top: 8px; background: var(--soft); border-radius: 7px; padding: 5px 9px;
+    font-size: 10.5px; color: var(--muted); display: flex; justify-content: space-between; gap: 8px;
+  }
+  .today-strip b { color: var(--ink); }
+
+  /* ===== E: pill ===== */
+  .pill-row { display: flex; align-items: center; gap: 7px; }
+  .pill-row .pstats { font-size: 11px; }
+  .pill-expand { margin-top: 9px; border-top: 1px solid #e3e6e9; padding-top: 8px; font-size: 10.5px; color: var(--muted); }
+
+  /* ===== F: dua kolom ===== */
+  .cols { display: flex; gap: 10px; margin-top: 8px; }
+  .col { flex: 1; background: var(--soft); border-radius: 8px; padding: 9px 10px; }
+  .col .t { font-size: 9px; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); }
+  .col .big { font-size: 15px; font-weight: 700; margin-top: 2px; }
+  .col .meter { margin-top: 6px; }
+  .col .cap { font-size: 9.5px; color: var(--muted); margin-top: 3px; }
+
+  /* rekomendasi */
+  .reco-box {
+    margin-top: 32px; background: #fff; border: 1.5px solid var(--accent);
+    border-radius: 12px; padding: 18px 22px; max-width: 880px;
+  }
+  .reco-box h2 { margin: 0 0 8px; font-size: 15px; color: var(--accent); }
+  .reco-box p { margin: 0 0 8px; font-size: 13px; }
+  .reco-box ul { margin: 0; padding-left: 20px; font-size: 13px; }
+  .reco-box li { margin-bottom: 4px; }
+</style>
+</head>
+<body>
+
+<h1>Alternatif Layout — Dock "Kenari Usage"</h1>
+<div class="subtitle">Enam opsi layout dengan informasi yang sama persis (kuota mingguan/bulanan, ringkasan, penggunaan 30 hari, penggunaan hari ini — tanpa saldo). Data contoh sama dengan wireframe sebelumnya.</div>
+<div class="note">Semua varian hanya mengubah sisi tampilan (client component) — data, route, dan tool tidak berubah.</div>
+
+<div class="grid">
+
+  <!-- ============ A ============ -->
+  <section class="variant">
+    <div class="v-head"><span class="v-tag">A</span><h3>Stacked — layout sekarang</h3><span class="v-size">270px</span></div>
+    <p class="v-desc">Semua bagian ditumpuk vertikal. Tinggi kartu mengikuti isi, bagian 30 hari &amp; hari ini bisa panjang.</p>
+    <div class="card-zone">
+      <div class="card" style="width:270px">
+        <div class="hdr"><span class="k-glyph">k</span><strong>Kenari</strong><span class="plan-chip">KREATOR</span><span class="chev">⌄</span><span class="refresh">⟳</span></div>
+        <div class="sec">Kuota Paket</div>
+        <div class="qa">
+          <div class="head"><strong>Mingguan</strong><span class="muted" style="font-size:10px">reset 14 Sep 02:37</span></div>
+          <div class="line">Terpakai Rp 136861 · Sisa Rp 13139 · 91%</div>
+          <div class="meter"><div style="width:91%"></div></div>
+        </div>
+        <div class="qa">
+          <div class="head"><strong>Bulanan</strong><span class="muted" style="font-size:10px">reset 7 Oct 02:37</span></div>
+          <div class="line">Terpakai Rp 136861 · Sisa Rp 463139 · 23%</div>
+          <div class="meter"><div style="width:23%"></div></div>
+        </div>
+        <div class="sec">Ringkasan</div>
+        <div class="stats">
+          <div class="stat"><strong>3.5rb</strong><span>Total Request</span></div>
+          <div class="stat"><strong>295.1M</strong><span>Total Token</span></div>
+        </div>
+        <div class="sec">Penggunaan 30 Hari</div>
+        <div class="mrow"><span class="m">glm-5-3-flash</span><span class="v num"><strong>3527x</strong> in 292.9M · out 2.1M tok</span></div>
+        <div class="mrow"><span class="m">tiny</span><span class="v num"><strong>10x</strong> in 100 · out 200 tok</span></div>
+        <div class="sec">Penggunaan Hari Ini</div>
+        <div class="mrow"><span class="m">glm-5-3-flash</span><span class="v num"><strong>120x</strong> in 850.1rb · out 40.2rb tok</span></div>
+      </div>
+    </div>
+    <ul class="pc">
+      <li><span class="plus">＋</span> Semua info terlihat sekaligus</li>
+      <li><span class="minus">－</span> Kartu tinggi, padat di bagian bawah</li>
+    </ul>
+  </section>
+
+  <!-- ============ B ============ -->
+  <section class="variant">
+    <div class="v-head"><span class="v-tag">B</span><h3>Tab segmented</h3><span class="v-size">270px</span></div>
+    <p class="v-desc">Ringkasan selalu tampil sebagai strip tipis; sisanya (Kuota / 30 Hari / Hari Ini) dipilih lewat tab. Tinggi kartu konsisten &amp; pendek.</p>
+    <div class="card-zone">
+      <div class="card" style="width:270px">
+        <div class="hdr"><span class="k-glyph">k</span><strong>Kenari</strong><span class="plan-chip">KREATOR</span><span class="refresh">⟳</span></div>
+        <div class="inline-stats num"><span>Req <b>3.5rb</b></span><span>·</span><span>Tok <b>295.1M</b></span><span>·</span><span>Hari ini <b>120</b></span></div>
+        <div class="seg">
+          <button class="on">Kuota</button>
+          <button>30 Hari</button>
+          <button>Hari Ini</button>
+        </div>
+        <div class="tabpane">
+          <div class="qa">
+            <div class="head"><strong>Mingguan</strong><span class="muted" style="font-size:10px">reset 14 Sep 02:37</span></div>
+            <div class="line">Terpakai Rp 136861 · Sisa Rp 13139 · 91%</div>
+            <div class="meter"><div style="width:91%"></div></div>
+          </div>
+          <div class="qa">
+            <div class="head"><strong>Bulanan</strong><span class="muted" style="font-size:10px">reset 7 Oct 02:37</span></div>
+            <div class="line">Terpakai Rp 136861 · Sisa Rp 463139 · 23%</div>
+            <div class="meter"><div style="width:23%"></div></div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <ul class="pc">
+      <li><span class="plus">＋</span> Paling hemat ruang, tidak pernah panjang</li>
+      <li><span class="minus">－</span> Detail model &amp; hari ini tersembunyi di balik tab</li>
+    </ul>
+  </section>
+
+  <!-- ============ C ============ -->
+  <section class="variant">
+    <div class="v-head"><span class="v-tag">C</span><h3>Ring / donut visual</h3><span class="v-size">300px</span></div>
+    <p class="v-desc">Kuota digambar sebagai dua cincin progress. Statistik jadi 3 kotak kecil, model hanya top-2.</p>
+    <div class="card-zone">
+      <div class="card" style="width:300px">
+        <div class="hdr"><span class="k-glyph">k</span><strong>Kenari</strong><span class="plan-chip">KREATOR</span><span class="refresh">⟳</span></div>
+        <div class="rings">
+          <div class="ring">
+            <div class="donut" style="background:conic-gradient(var(--amber) 0 91%, var(--track) 91% 100%)"><div class="num">91%</div></div>
+            <div class="cap">Mingguan · reset 14 Sep</div>
+          </div>
+          <div class="ring">
+            <div class="donut" style="background:conic-gradient(var(--amber) 0 23%, var(--track) 23% 100%)"><div class="num">23%</div></div>
+            <div class="cap">Bulanan · reset 7 Oct</div>
+          </div>
+        </div>
+        <div class="stat3">
+          <div class="stat"><strong>3.5rb</strong><span>Request</span></div>
+          <div class="stat"><strong>295.1M</strong><span>Token</span></div>
+          <div class="stat"><strong>120</strong><span>Hari ini</span></div>
+        </div>
+        <div class="sec">Top Model 30 Hari</div>
+        <div class="mrow"><span class="m">glm-5-3-flash</span><span class="v num"><strong>3527x</strong> · 295.1M tok</span></div>
+        <div class="mrow"><span class="m">tiny</span><span class="v num"><strong>10x</strong> · 300 tok</span></div>
+      </div>
+    </div>
+    <ul class="pc">
+      <li><span class="plus">＋</span> Paling cepat dibaca sekilas (paket hampir habis langsung kelihatan)</li>
+      <li><span class="minus">－</span> Rupiah terpakai/sisa hilang dari tampilan utama; daftar model dipangkas</li>
+    </ul>
+  </section>
+
+  <!-- ============ D ============ -->
+  <section class="variant reco">
+    <div class="v-head"><span class="v-tag">D</span><h3>Tabel kompak</h3><span class="v-size">340px</span><span class="reco-badge">⭐ Rekomendasi</span></div>
+    <p class="v-desc">Kuota jadi dua bar horizontal ramping satu baris, penggunaan jadi tabel rata kolom dengan baris Total, hari ini jadi strip di bawah. Padat tapi semua angka tetap ada.</p>
+    <div class="card-zone">
+      <div class="card" style="width:340px">
+        <div class="hdr"><span class="k-glyph">k</span><strong>Kenari</strong><span class="plan-chip">KREATOR</span><span class="chev">⌄</span><span class="refresh">⟳</span></div>
+        <div class="qbar-row num">
+          <span class="lbl">Mingguan</span>
+          <div class="meter"><div style="width:91%"></div></div>
+          <span class="pct">91%</span>
+          <span class="rst">reset 14 Sep 02:37</span>
+        </div>
+        <div class="qbar-row num">
+          <span class="lbl">Bulanan</span>
+          <div class="meter"><div style="width:23%"></div></div>
+          <span class="pct">23%</span>
+          <span class="rst">reset 7 Oct 02:37</span>
+        </div>
+        <div class="sec">Penggunaan 30 Hari</div>
+        <table class="usg num">
+          <tr><th>Model</th><th>Req</th><th>In tok</th><th>Out tok</th></tr>
+          <tr><td>glm-5-3-flash</td><td>3.527</td><td>292.9M</td><td>2.1M</td></tr>
+          <tr><td>tiny</td><td>10</td><td>100</td><td>200</td></tr>
+          <tr class="tot"><td>Total · Rp 143.240</td><td>3.537</td><td>293.0M</td><td>2.1M</td></tr>
+        </table>
+        <div class="today-strip num"><span>Hari ini</span><span><b>120 req</b> · 890.3rb tok</span></div>
+      </div>
+    </div>
+    <ul class="pc">
+      <li><span class="plus">＋</span> Paling rapi untuk angka: kolom lurus, tabular-nums, ada baris Total</li>
+      <li><span class="plus">＋</span> Tinggi stabil &amp; pendek walau model banyak (list bisa discroll)</li>
+      <li><span class="minus">－</span> Perlu lebar sedikit lebih (±340px) agar kolom tidak sesak</li>
+    </ul>
+  </section>
+
+  <!-- ============ E ============ -->
+  <section class="variant">
+    <div class="v-head"><span class="v-tag">E</span><h3>Pill mini (collapsed by default)</h3><span class="v-size">270px</span></div>
+    <p class="v-desc">Satu baris status ramping menempel di pojok; detail baru terbuka saat diklik. Cocok kalau kartu terasa mengganggu.</p>
+    <div class="card-zone" style="flex-direction:column; gap:14px; align-items:center">
+      <div class="card" style="width:270px; padding:8px 12px">
+        <div class="pill-row">
+          <span class="k-glyph">k</span>
+          <span class="pstats num"><strong>91%</strong> mgg · <strong>23%</strong> bln · 3.5rb req</span>
+          <span class="chev" style="margin-left:auto">⌃</span>
+        </div>
+      </div>
+      <div class="card" style="width:270px">
+        <div class="pill-row">
+          <span class="k-glyph">k</span>
+          <span class="pstats num"><strong>91%</strong> mgg · <strong>23%</strong> bln · 3.5rb req</span>
+          <span class="chev" style="margin-left:auto">⌄</span>
+        </div>
+        <div class="pill-expand num">
+          Mingguan — Terpakai Rp 136861 / Sisa Rp 13139 · reset 14 Sep 02:37<br>
+          Bulanan — Terpakai Rp 136861 / Sisa Rp 463139 · reset 7 Oct 02:37<br>
+          30 hari — 3.537 req · 295.1M tok · top: glm-5-3-flash<br>
+          Hari ini — 120 req · 890.3rb tok
+        </div>
+      </div>
+    </div>
+    <ul class="pc">
+      <li><span class="plus">＋</span> Hampir tidak memakan ruang chat</li>
+      <li><span class="minus">－</span> Semua detail butuh klik; tidak ada daftar per model terlihat</li>
+    </ul>
+  </section>
+
+  <!-- ============ F ============ -->
+  <section class="variant">
+    <div class="v-head"><span class="v-tag">F</span><h3>Dua kolom (kuota | statistik)</h3><span class="v-size">360px</span></div>
+    <p class="v-desc">Kolom kiri khusus kuota (bar + reset), kolom kanan statistik. Daftar model full-width di bawah. Memanfaatkan lebar agar kartu lebih pendek.</p>
+    <div class="card-zone">
+      <div class="card" style="width:360px">
+        <div class="hdr"><span class="k-glyph">k</span><strong>Kenari</strong><span class="plan-chip">KREATOR</span><span class="chev">⌄</span><span class="refresh">⟳</span></div>
+        <div class="cols">
+          <div class="col">
+            <div class="t">Kuota Paket</div>
+            <div style="margin-top:6px; font-size:11px"><strong>Mingguan</strong> · <span class="num">91%</span></div>
+            <div class="meter"><div style="width:91%"></div></div>
+            <div class="cap num">Terpakai Rp 136861 · Sisa Rp 13139 · reset 14 Sep</div>
+            <div style="margin-top:8px; font-size:11px"><strong>Bulanan</strong> · <span class="num">23%</span></div>
+            <div class="meter"><div style="width:23%"></div></div>
+            <div class="cap num">Terpakai Rp 136861 · Sisa Rp 463139 · reset 7 Oct</div>
+          </div>
+          <div class="col">
+            <div class="t">Ringkasan</div>
+            <div class="big num">3.5rb</div>
+            <div class="cap">Total Request</div>
+            <div class="big num" style="margin-top:6px">295.1M</div>
+            <div class="cap">Total Token</div>
+            <div class="big num" style="margin-top:6px; font-size:12px">+120</div>
+            <div class="cap">Hari ini</div>
+          </div>
+        </div>
+        <div class="sec">Penggunaan 30 Hari</div>
+        <div class="mrow"><span class="m">glm-5-3-flash</span><span class="v num"><strong>3527x</strong> in 292.9M · out 2.1M tok</span></div>
+        <div class="mrow"><span class="m">tiny</span><span class="v num"><strong>10x</strong> in 100 · out 200 tok</span></div>
+      </div>
+    </div>
+    <ul class="pc">
+      <li><span class="plus">＋</span> Seimbang: visual kuota kuat, semua info tetap ada</li>
+      <li><span class="minus">－</span> Butuh lebar ±360px; dua kolom sempit di layar kecil</li>
+    </ul>
+  </section>
+
+</div>
+
+<div class="reco-box">
+  <h2>Rekomendasi</h2>
+  <p><b>Varian D (Tabel kompak)</b> adalah yang paling rapi untuk konten ini: data dock didominasi angka, dan tabel dengan kolom rata kanan (tabular-nums) + baris Total membuatnya mudah dipindai. Kuota cukup dua bar satu-baris sehingga tinggi kartu stabil walau daftar model panjang.</p>
+  <ul>
+    <li><b>D</b> — default terbaik; naikkan lebar default kartu ke ±340px.</li>
+    <li><b>B</b> — pilih ini kalau prioritasnya kartu sependek mungkin; ringkasan tetap selalu terlihat.</li>
+    <li><b>C</b> — pilih ini kalau mau paling visual; pasangkan dengan tooltip/expand untuk detail Rupiah.</li>
+    <li>Kombinasi juga bisa: <b>D + E</b> (pill saat collapse, tabel saat expand) tanpa kehilangan keuntungan keduanya.</li>
+  </ul>
+</div>
+
+</body>
+</html>

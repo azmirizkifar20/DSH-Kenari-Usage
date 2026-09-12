@@ -164,58 +164,6 @@ export function parseUsageMarkdown(text: string): ParsedModelUsage {
   return { models, total_requests, total_tokens };
 }
 
-/**
- * Coerce one candidate balance value to a floored Rp integer, or null.
- * Numbers must be finite and >= 0; strings tolerate a leading `Rp` marker,
- * Indonesian thousand separators (`1.234.567`), and a comma decimal
- * (`4600,50` → 4600, integer part only). Anything else yields null.
- */
-function parseBalanceValue(value: unknown): number | null {
-  if (typeof value === 'number') {
-    return Number.isFinite(value) && value >= 0 ? Math.floor(value) : null;
-  }
-  if (typeof value !== 'string') return null;
-  const noRp = value.trim().replace(/^Rp\s*/i, '');
-  const [intPart] = noRp.split(',');
-  if (intPart === undefined) return null;
-  const digits = intPart.replace(/[^0-9]/g, '');
-  if (digits === '') return null;
-  const n = Number.parseInt(digits, 10);
-  return Number.isSafeInteger(n) && n >= 0 ? n : null;
-}
-
-/**
- * Parse the `kenari_balance` MCP text into a rupiah integer, or null.
- * Live shape: plain text `"Saldo: Rp 97"`.
- * Also tolerates a JSON envelope (`{"balance_rp": N}`, `{"balance": N}`,
- * `{"saldo": "Rp N"}`, ...).
- *
- * Design choice: total function — missing/garbage/non-string input yields
- * null (unavailable) instead of throwing, so a balance failure can never
- * fail the whole payload; callers map null straight to `balance_rp: null`.
- */
-export function parseBalance(text: unknown): number | null {
-  if (typeof text !== 'string') return null;
-  const trimmed = text.trim();
-  if (trimmed === '') return null;
-  if (trimmed.startsWith('{')) {
-    try {
-      const json = JSON.parse(trimmed) as unknown;
-      if (!isRecord(json)) return null;
-      for (const key of ['balance_rp', 'balance', 'saldo', 'amount_rp', 'amount']) {
-        const v = parseBalanceValue(json[key]);
-        if (v !== null) return v;
-      }
-      return null;
-    } catch {
-      return null;
-    }
-  }
-  const m = /Rp\s*([0-9][0-9.\s,]*)/i.exec(trimmed);
-  if (m?.[1] === undefined) return null;
-  return parseBalanceValue(m[1]);
-}
-
 /** Format an Rp amount as a plain integer with no separators: `Rp 143239`. */
 export function formatRp(n: number): string {
   if (typeof n !== 'number' || !Number.isFinite(n)) {

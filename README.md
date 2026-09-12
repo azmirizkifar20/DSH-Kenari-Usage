@@ -7,7 +7,7 @@ A DeepSeek Harness plugin that shows **Kenari provider usage** — official `kn-
 -   🛠️ **Model tool** — `kenari_usage`, so the agent can query usage on demand
 -   🔑 **API key auth** — sends your `kn-` Bearer key as an explicit `Authorization:` header; nothing else leaves your machine
 -   🖥️ **Web UI** — floating card (draggable, collapsible, refresh, KUOTA PAKET / RINGKASAN / 30-day list). The framework-free DOM panel in `src/panel.ts` is legacy/unmounted, kept only for tests.
--   ✅ **Tests** — vitest, ~43 tests (quota parse/format + Bearer tool integration + route contract + legacy panel/format)
+-   ✅ **Tests** — vitest, ~39 tests (quota parse/format + Bearer tool integration + route contract + legacy panel/format)
 
 ## Install
 

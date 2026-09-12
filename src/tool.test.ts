@@ -47,20 +47,16 @@ const MCP_TEXT = [
   'Total: 3537 request, Rp 143240 (30 hari).',
 ].join('\n')
 
-const MCP_BALANCE_TEXT = 'Saldo: Rp 97'
-
-function mockBearerFetch(opts?: { mcpFails?: boolean; quotaStatus?: number; balanceFails?: boolean; balanceText?: string }): void {
+function mockBearerFetch(opts?: { mcpFails?: boolean; quotaStatus?: number }): void {
   vi.stubGlobal(
     'fetch',
     vi.fn(async (url: unknown, init?: { body?: unknown }) => {
       const u = String(url)
       if (u.includes('/mcp')) {
-        const body = typeof init?.body === 'string' ? init.body : ''
-        const isBalance = body.includes('kenari_balance')
-        if ((opts?.mcpFails === true && !isBalance) || (opts?.balanceFails === true && isBalance)) {
+        if (opts?.mcpFails === true) {
           return new Response('boom', { status: 500 })
         }
-        const text = isBalance ? (opts?.balanceText ?? MCP_BALANCE_TEXT) : MCP_TEXT
+        const text = MCP_TEXT
         const rpc = {
           jsonrpc: '2.0',
           id: 1,
@@ -115,7 +111,7 @@ describe('kenariUsageTool.execute without apiKey', () => {
 })
 
 describe('kenariUsageTool.execute Bearer path with mocked fetch', () => {
-  it('quota + MCP -> {quota, usage, balance_rp} with sorted models and totals', async () => {
+  it('quota + MCP -> {quota, usage} with sorted models and totals', async () => {
     mockBearerFetch()
     const tool = await loadTool('kn-test')
     const value = await tool.execute({}, execCtx())
@@ -148,7 +144,6 @@ describe('kenariUsageTool.execute Bearer path with mocked fetch', () => {
         total_requests: 3537,
         total_tokens: 292944237 + 2139620 + 100 + 200,
       },
-      balance_rp: 97,
     })
     const text = renderText(tool, value)
     expect(text).toContain('Kreator')
@@ -162,12 +157,10 @@ describe('kenariUsageTool.execute Bearer path with mocked fetch', () => {
       vi.fn(async (url: unknown, init?: { headers?: Record<string, string>; body?: unknown }) => {
         seen.push({ url: String(url), headers: init?.headers ?? {} })
         if (String(url).includes('/mcp')) {
-          const body = typeof init?.body === 'string' ? init.body : ''
-          const text = body.includes('kenari_balance') ? MCP_BALANCE_TEXT : MCP_TEXT
           const rpc = {
             jsonrpc: '2.0',
             id: 1,
-            result: { content: [{ type: 'text', text }] },
+            result: { content: [{ type: 'text', text: MCP_TEXT }] },
           }
           return new Response(JSON.stringify(rpc), { status: 200 })
         }
@@ -176,7 +169,7 @@ describe('kenariUsageTool.execute Bearer path with mocked fetch', () => {
     )
     const tool = await loadTool('kn-test-key')
     await tool.execute({}, execCtx())
-    expect(seen).toHaveLength(3)
+    expect(seen).toHaveLength(2)
     for (const call of seen) {
       expect(call.headers['Authorization']).toBe('Bearer kn-test-key')
     }
@@ -188,24 +181,9 @@ describe('kenariUsageTool.execute Bearer path with mocked fetch', () => {
     const value = (await tool.execute({}, execCtx())) as {
       quota: { plan: string }
       usage: null
-      balance_rp: number | null
     }
     expect(value.quota.plan).toBe('Kreator')
     expect(value.usage).toBeNull()
-    expect(value.balance_rp).toBe(97)
-  })
-
-  it('balance failure -> balance_rp null, payload still ok', async () => {
-    mockBearerFetch({ balanceFails: true })
-    const tool = await loadTool('kn-test')
-    const value = (await tool.execute({}, execCtx())) as {
-      quota: { plan: string }
-      usage: { window: string } | null
-      balance_rp: number | null
-    }
-    expect(value.quota.plan).toBe('Kreator')
-    expect(value.usage?.window).toBe('30d')
-    expect(value.balance_rp).toBeNull()
   })
 
   it('quota 401 -> invalid API key error retryable:false', async () => {

@@ -4,7 +4,6 @@ import { defineTool } from '@deepseek-ai/dsh-tools'
 import {
   formatResetShort,
   formatRp,
-  parseBalance,
   parseQuota,
   parseUsageMarkdown,
   type ParsedModelUsage,
@@ -45,7 +44,6 @@ interface ModelUsagePayload extends ParsedModelUsage {
 interface QuotaSuccessValue {
   quota: ParsedQuota
   usage: ModelUsagePayload | null
-  balance_rp: number | null
 }
 
 interface ErrorValue {
@@ -144,9 +142,6 @@ const outputSchema = {
             },
             { type: 'null' },
           ],
-        },
-        balance_rp: {
-          oneOf: [{ type: 'number' }, { type: 'null' }],
         },
       },
     },
@@ -380,43 +375,6 @@ async function fetchModelUsage(
   throw new Error(`Kenari usage fetch failed: ${lastNetworkError}`)
 }
 
-async function fetchBalance(
-  apiKey: string,
-  callerSignal: AbortSignal,
-): Promise<number | null> {
-  const body = JSON.stringify({
-    jsonrpc: '2.0',
-    id: 2,
-    method: 'tools/call',
-    params: { name: 'kenari_balance', arguments: {} },
-  })
-  let res: Response
-  let lastNetworkError = 'unknown fetch failure'
-  for (let attempt = 0; attempt < 2; attempt += 1) {
-    try {
-      res = await fetchBearerOnce(MCP_URL, apiKey, callerSignal, {
-        method: 'POST',
-        body,
-        accept: 'application/json, text/event-stream',
-      })
-    } catch (err) {
-      if (callerSignal.aborted) throw err
-      lastNetworkError = err instanceof Error ? err.message : String(err)
-      if (attempt === 0) continue
-      throw new Error(`Kenari balance fetch failed: ${lastNetworkError}`)
-    }
-    if (!res.ok) {
-      if (attempt === 0) continue
-      throw new Error(`Kenari balance request failed (${res.status})`)
-    }
-    const raw = await res.text()
-    const rpc = parseMcpRpcPayload(raw)
-    const text = unwrapMcpText(rpc)
-    return parseBalance(text)
-  }
-  throw new Error(`Kenari balance fetch failed: ${lastNetworkError}`)
-}
-
 function hasApiKey(): boolean {
   return activeApiKey !== undefined && activeApiKey !== ''
 }
@@ -446,14 +404,7 @@ async function loadQuotaUsage(apiKey: string, callerSignal: AbortSignal): Promis
     if (callerSignal.aborted) throw callerSignal.reason
     usage = null
   }
-  let balance_rp: number | null = null
-  try {
-    balance_rp = await fetchBalance(apiKey, callerSignal)
-  } catch {
-    if (callerSignal.aborted) throw callerSignal.reason
-    balance_rp = null
-  }
-  return { quota, usage, balance_rp }
+  return { quota, usage }
 }
 
 export const kenariUsageTool = defineTool({
@@ -618,7 +569,6 @@ async function handleUsageRequest(
   }
   const quota = (value as QuotaSuccessValue).quota
   const usage = (value as QuotaSuccessValue).usage
-  const balance_rp = (value as QuotaSuccessValue).balance_rp
   writeUsageJson(res, 200, {
     ok: true,
     plan: quota.plan,
@@ -634,7 +584,6 @@ async function handleUsageRequest(
             total_requests: usage.total_requests,
             total_tokens: usage.total_tokens,
           },
-    balance_rp: balance_rp ?? null,
     serverTime: Date.now(),
     pollIntervalMs: pollIntervalMsOf(activePollIntervalSecs),
   })

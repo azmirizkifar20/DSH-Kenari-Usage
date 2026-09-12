@@ -75,22 +75,18 @@ const MCP_TEXT = [
   '| tiny | 10 | 100 | 200 | Rp 1 |',
 ].join('\n')
 
-const MCP_BALANCE_TEXT = 'Saldo: Rp 97'
-
-function mockQuotaMcp(opts?: { mcpFails?: boolean; quotaJson?: unknown; balanceFails?: boolean }): void {
+function mockQuotaMcp(opts?: { mcpFails?: boolean; quotaJson?: unknown }): void {
   vi.stubGlobal(
     'fetch',
-    vi.fn(async (url: unknown, init?: { body?: unknown }) => {
+    vi.fn(async (url: unknown) => {
       if (String(url).includes('/mcp')) {
-        const body = typeof init?.body === 'string' ? init.body : ''
-        const isBalance = body.includes('kenari_balance')
-        if ((opts?.mcpFails === true && !isBalance) || (opts?.balanceFails === true && isBalance)) {
+        if (opts?.mcpFails === true) {
           return new Response('boom', { status: 500 })
         }
         const rpc = {
           jsonrpc: '2.0',
           id: 1,
-          result: { content: [{ type: 'text', text: isBalance ? MCP_BALANCE_TEXT : MCP_TEXT }] },
+          result: { content: [{ type: 'text', text: MCP_TEXT }] },
         }
         return new Response(JSON.stringify(rpc), { status: 200 })
       }
@@ -104,7 +100,7 @@ afterEach(() => {
 })
 
 describe('GET /dsh-kenari-usage Bearer route (frozen contract)', () => {
-  it('returns plan/coupon/week/month/usage/balance_rp/serverTime/pollIntervalMs', async () => {
+  it('returns plan/coupon/week/month/usage/serverTime/pollIntervalMs', async () => {
     mockQuotaMcp()
     const route = await captureRoute({ apiKey: 'kn-test' })
     expect(route.path).toBe('/dsh-kenari-usage')
@@ -132,7 +128,6 @@ describe('GET /dsh-kenari-usage Bearer route (frozen contract)', () => {
     expect(models[0]?.['model']).toBe('glm-5-3-flash')
     expect(usage['total_requests']).toBe(3537)
     expect(usage['total_tokens']).toBe(292944237 + 2139620 + 100 + 200)
-    expect(payload['balance_rp']).toBe(97)
     expect(typeof payload['serverTime']).toBe('number')
     expect(payload['pollIntervalMs']).toBe(60000)
   })
@@ -146,19 +141,6 @@ describe('GET /dsh-kenari-usage Bearer route (frozen contract)', () => {
     const payload = JSON.parse(res.body) as Record<string, unknown>
     expect(payload['ok']).toBe(true)
     expect(payload['usage']).toBeNull()
-    expect(payload['plan']).toBe('Kreator')
-    expect(payload['balance_rp']).toBe(97)
-  })
-
-  it('balance failure -> 200 with balance_rp null (payload still ok)', async () => {
-    mockQuotaMcp({ balanceFails: true })
-    const route = await captureRoute({ apiKey: 'kn-test' })
-    const res = makeRes()
-    await route.handler({ method: 'GET' }, res)
-    expect(res.status).toBe(200)
-    const payload = JSON.parse(res.body) as Record<string, unknown>
-    expect(payload['ok']).toBe(true)
-    expect(payload['balance_rp']).toBeNull()
     expect(payload['plan']).toBe('Kreator')
   })
 
