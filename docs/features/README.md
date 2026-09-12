@@ -3,7 +3,7 @@
 This folder contains documentation for implemented features and current state.
 
 **Updated**: 2026-09-12
-**Recent**: Legacy residue removed — `src/format.ts` + `src/panel.ts` (unmounted cookie-era iteration), their tests, and the legacy `cordis.yml` endpoint are gone; codebase is apiKey-only with 22 tests.
+**Recent**: Dock header redesigned — plan name rendered as an amber pill (`PLAN_CHIP_BG`), chevron split out as a second icon button beside Refresh on the right.
 
 ## Index
 

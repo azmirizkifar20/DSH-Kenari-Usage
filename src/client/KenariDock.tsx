@@ -12,8 +12,9 @@
  *
  * Layout is a compact card rendered as a FLOATING surface over the chat
  * body, draggable by its header to anywhere on screen (position persists in
- * localStorage): a header row (`k` glyph + Kenari + plan name, chevron
- * toggle, Refresh; drag anywhere else on the row) over three sections —
+ * localStorage): a header row (`k` glyph + Kenari + plan pill on the left,
+ * chevron + Refresh icon buttons on the right; drag anywhere else on the
+ * row) over three sections —
  * KUOTA PAKET (weekly/monthly quota rows with used/sisa rupiah and a thin
  * bar), RINGKASAN (total request/token stat boxes), PENGGUNAAN 30 HARI
  * (scrollable per-model list) and PENGGUNAAN HARI INI (today usage derived
@@ -66,6 +67,8 @@ const HEIGHT_STORAGE_KEY = 'kenari-usage-dock-height'
 const METER_FILL_COLOR = '#e3a53d'
 const METER_TRACK_COLOR = 'rgba(255,255,255,0.12)'
 const STAT_BOX_COLOR = 'rgba(255,255,255,0.06)'
+/** Header plan chip background: amber tint keyed to the k badge fill. */
+const PLAN_CHIP_BG = 'rgba(227,165,61,0.16)'
 
 interface DockPosition {
   top: number
@@ -345,7 +348,7 @@ interface DockSnapshot {
 /**
  * The composer dock card: a floating surface over the chat body, draggable
  * by its header to anywhere on screen (position persists in localStorage),
- * rendering a collapsible `k Kenari KREATOR ⌄ … ⟳` header over KUOTA PAKET /
+ * rendering a collapsible `k Kenari ⟨KREATOR⟩ … ⌄ ⟳` header over KUOTA PAKET /
  * RINGKASAN / PENGGUNAAN 30 HARI sections. Themed via the host's CSS vars
  * (`--dsw-alias-bg-base` / `--dsw-alias-border-l1`) plus `color: inherit`
  * for all text, so it tracks the host's light/dark theme with no hardcoded
@@ -705,8 +708,7 @@ export function KenariDock() {
     textTransform: 'uppercase',
   }
 
-  /** Margin variant for section labels in the body column; the header plan
-   *  chip shares sectionLabelStyle and must not get the margin. */
+  /** Margin variant for section labels in the body column. */
   const sectionLabelBlockStyle: CSSProperties = {
     ...sectionLabelStyle,
     marginTop: 12,
@@ -872,7 +874,7 @@ export function KenariDock() {
       <div style={headerStyle} data-testid="kenari-drag-handle" onPointerDown={handleHeaderPointerDown}>
         <button
           type="button"
-          style={{ ...buttonStyle, display: 'inline-flex', alignItems: 'center', gap: 5, cursor: 'pointer' }}
+          style={{ ...buttonStyle, display: 'inline-flex', alignItems: 'center', gap: 7, cursor: 'pointer' }}
           data-testid="kenari-toggle"
           aria-expanded={!collapsed}
           aria-controls="kenari-usage-body"
@@ -898,50 +900,80 @@ export function KenariDock() {
             k
           </span>
           <strong>Kenari</strong>
-          {plan !== null && <span style={{ ...sectionLabelStyle }}>{plan.toUpperCase()}</span>}
-          <svg
-            width="10"
-            height="10"
-            viewBox="0 0 12 12"
-            fill="none"
-            aria-hidden="true"
-            style={{
-              opacity: 0.55,
-              transform: collapsed ? 'rotate(0deg)' : 'rotate(180deg)',
-              transition: 'transform 150ms ease',
-            }}
-          >
-            <path d="M2.5 4.5L6 8L9.5 4.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
-          </svg>
-        </button>
-        <button
-          type="button"
-          style={buttonStyle}
-          data-testid="kenari-refresh"
-          aria-label="Refresh"
-          aria-busy={refreshing}
-          title={refreshing ? 'Refreshing…' : 'Refresh'}
-          disabled={refreshing}
-          onPointerDown={(e) => e.stopPropagation()}
-          onClick={() => load(false)}
-        >
-          {refreshing ? (
-            <svg
-              className="kenari-dock-spin"
-              width="12"
-              height="12"
-              viewBox="0 0 24 24"
-              fill="none"
-              aria-hidden="true"
-              style={{ display: 'block' }}
+          {plan !== null && (
+            <span
+              style={{
+                background: PLAN_CHIP_BG,
+                color: METER_FILL_COLOR,
+                borderRadius: 999,
+                padding: '2px 8px',
+                fontSize: '0.7em',
+                fontWeight: 600,
+                letterSpacing: '0.07em',
+                textTransform: 'uppercase',
+                lineHeight: 1.4,
+              }}
             >
-              <circle cx="12" cy="12" r="9" stroke="currentColor" strokeOpacity="0.25" strokeWidth="3" />
-              <path d="M21 12a9 9 0 0 0-9-9" stroke="currentColor" strokeWidth="3" strokeLinecap="round" />
-            </svg>
-          ) : (
-            '⟳'
+              {plan.toUpperCase()}
+            </span>
           )}
         </button>
+        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+          <button
+            type="button"
+            style={{ ...buttonStyle, padding: '2px 4px', borderRadius: 6 }}
+            data-testid="kenari-chevron"
+            aria-expanded={!collapsed}
+            aria-controls="kenari-usage-body"
+            title={collapsed ? 'Expand' : 'Collapse'}
+            onPointerDown={(e) => e.stopPropagation()}
+            onClick={() => setCollapsed((c) => !c)}
+          >
+            <svg
+              width="11"
+              height="11"
+              viewBox="0 0 12 12"
+              fill="none"
+              aria-hidden="true"
+              style={{
+                display: 'block',
+                opacity: 0.6,
+                transform: collapsed ? 'rotate(0deg)' : 'rotate(180deg)',
+                transition: 'transform 150ms ease',
+              }}
+            >
+              <path d="M2.5 4.5L6 8L9.5 4.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
+          </button>
+          <button
+            type="button"
+            style={buttonStyle}
+            data-testid="kenari-refresh"
+            aria-label="Refresh"
+            aria-busy={refreshing}
+            title={refreshing ? 'Refreshing…' : 'Refresh'}
+            disabled={refreshing}
+            onPointerDown={(e) => e.stopPropagation()}
+            onClick={() => load(false)}
+          >
+            {refreshing ? (
+              <svg
+                className="kenari-dock-spin"
+                width="12"
+                height="12"
+                viewBox="0 0 24 24"
+                fill="none"
+                aria-hidden="true"
+                style={{ display: 'block' }}
+              >
+                <circle cx="12" cy="12" r="9" stroke="currentColor" strokeOpacity="0.25" strokeWidth="3" />
+                <path d="M21 12a9 9 0 0 0-9-9" stroke="currentColor" strokeWidth="3" strokeLinecap="round" />
+              </svg>
+            ) : (
+              '⟳'
+            )}
+          </button>
+        </span>
       </div>
       {!collapsed && (
         <div

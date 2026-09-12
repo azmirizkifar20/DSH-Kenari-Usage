@@ -6,3 +6,4 @@ lib/
 *.tgz
 .DS_Store
 Thumbs.db
+.superpowers/

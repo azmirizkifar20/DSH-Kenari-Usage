@@ -2,7 +2,7 @@
 
 This folder documents the front-end design system of this plugin: a single UI surface, the floating usage dock.
 
-**Updated**: 2026-09-12 — quota rows now show a live reset countdown via `formatResetCountdown` (replaced the UTC reset stamp helper).
+**Updated**: 2026-09-12 — dock header redesigned: plan name is now an amber pill (`PLAN_CHIP_BG`) next to the brand; chevron + Refresh are separate icon buttons on the right.
 
 ## Structure
 

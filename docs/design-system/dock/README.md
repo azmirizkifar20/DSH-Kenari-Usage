@@ -4,7 +4,7 @@ A design system for the dock surface: the floating Kenari usage card rendered ov
 
 ## Current Status
 
-Implemented as a single React component (`src/client/KenariDock.tsx`, ~1000 lines) with inline styles. All sections (KUOTA PAKET, RINGKASAN, PENGGUNAAN 30 HARI, PENGGUNAAN HARI INI), drag, 4-edge resize, collapse, polling, and the auth-error card are live. No separate CSS layer exists.
+Implemented as a single React component (`src/client/KenariDock.tsx`, ~1000 lines) with inline styles. All sections (KUOTA PAKET, RINGKASAN, PENGGUNAAN 30 HARI, PENGGUNAAN HARI INI), drag, 4-edge resize, collapse, polling, and the auth-error card are live. No separate CSS layer exists. Header layout: brand block (`k` badge + **Kenari** + amber plan pill, `PLAN_CHIP_BG`) on the left, chevron + Refresh icon buttons on the right; both the brand block and the chevron toggle collapse.
 
 ## Goals
 
