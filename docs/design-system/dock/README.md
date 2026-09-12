@@ -30,7 +30,6 @@ Implemented as a single React component (`src/client/KenariDock.tsx`, ~1000 line
 
 ## Known Exceptions
 
-- The legacy DOM panel `src/panel.ts` keeps its own (minimal) styling and is unmounted — do not use it as a styling reference; it survives only for tests.
 - Meter fill is a fixed amber (`#e3a53d`) rather than theme-derived — intentional, to keep the quota bar readable over both shell themes.
 
 See also:

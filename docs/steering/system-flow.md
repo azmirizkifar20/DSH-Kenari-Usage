@@ -42,4 +42,4 @@ How the plugin boots, initializes, and routes requests at runtime. This is the s
 
 - No `.env` file. All config arrives via the plugin `Config` schema (`src/kenari-usage.ts`): `apiKey` (the `kn-` secret) and `pollIntervalSecs`, set by overriding the plugin row in the profile's `cordis.patch.yml`. Treat that file as secret — never share or commit it.
 - Client-side persistence uses `window.localStorage` (see `src/client/KenariDock.tsx`): `kenari-usage-dock-position`, `kenari-usage-dock-width`, `kenari-usage-dock-height`, `kenari-usage-day-baseline`.
-- `cordis.yml` is a local dev patch (inserts the plugin from `dist/` via `file://`); its `config.endpoint` value is a legacy leftover ignored by the current `Config` schema.
+- `cordis.yml` is a local dev patch (inserts the plugin from `dist/` via `file://`).

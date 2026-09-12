@@ -491,7 +491,7 @@ export function apply(ctx: Context, config: Config) {
   console.log('[kenari-usage] plugin loaded!')
 }
 
-/** Same-origin host route path for the usage panel (no secrets in URL). */
+/** Same-origin host route path for the usage dock (no secrets in URL). */
 const USAGE_ROUTE_PATH = '/dsh-kenari-usage'
 
 /** Outer budget for one route request (covers both 8s fetch attempts). */

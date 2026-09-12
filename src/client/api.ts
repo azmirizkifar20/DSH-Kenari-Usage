@@ -74,8 +74,8 @@ export type DockResponse = DockPayload | DockFailure
  * Fetch the dock payload from the plugin's same-origin host route.
  * `refresh=true` asks the host to force a fresh upstream fetch (`?refresh=1`).
  * Throws `Error("HTTP <status>")` on a non-2xx response; network failures and
- * aborts surface as native fetch rejections. The optional signal supports
- * aborting a superseded request (mirrors the panel's abort-prior behavior).
+ * aborts surface as native fetch rejections. The optional signal aborts a
+ * superseded request.
  */
 export async function fetchDock(refresh: boolean, signal?: AbortSignal): Promise<DockResponse> {
   const res = await fetch(`/dsh-kenari-usage${refresh ? '?refresh=1' : ''}`, {

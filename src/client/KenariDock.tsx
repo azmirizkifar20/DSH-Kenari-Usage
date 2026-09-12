@@ -2,12 +2,11 @@
  * Kenari usage dock — the browser-half React component rendered into the
  * host's `conversation.composer.dock` slot.
  *
- * UX mirrors the framework-free panel (`src/panel.ts`): Refresh is disabled
- * while fetching (the ⟳ glyph swaps to a spinning arc), rapid clicks collapse
- * (1000ms debounce + abort-prior), failures show an error card with Retry
- * while the last data dims, and the display is recomputed on a 1s display
- * timer that never refetches. Unlike
- * the panel, the dock ALSO auto-polls: every `pollIntervalMs`
+ * Refresh behavior: the button is disabled while fetching (the ⟳ glyph
+ * swaps to a spinning arc), rapid clicks collapse (1000ms debounce +
+ * abort-prior), failures show an error card with Retry while the last
+ * data dims, and the display is recomputed on a 1s display timer that
+ * never refetches. The dock ALSO auto-polls: every `pollIntervalMs`
  * (host-provided, default 6000) it refetches the same-origin
  * `/dsh-kenari-usage` route.
  *
@@ -23,15 +22,15 @@
  * chevron button collapses/expands the body.
  *
  * Display values are derived client-side from the host payload's raw numbers
- * (`used_rp` / `remaining_rp` → bar width, token counts → compact strings):
- * the browser cannot import `../format.ts` because host and client bundle
- * separately.
+ * (`used_rp` / `remaining_rp` → bar width, token counts → compact strings);
+ * host and client bundle separately, so nothing is shared beyond the JSON
+ * contract.
  */
 
 import { useCallback, useEffect, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent } from 'react'
 import { fetchDock, type DockPayload, type DockUsage, type DockWindow } from './api.js'
 
-/** Minimum gap between non-forced loads (ms) — mirrors REFRESH_DEBOUNCE_MS in panel.ts. */
+/** Minimum gap between non-forced loads (ms). */
 const REFRESH_DEBOUNCE_MS = 1000
 
 /** Local display-tick cadence (ms) — refreshes display only, never fetches. */

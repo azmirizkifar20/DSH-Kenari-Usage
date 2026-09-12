@@ -26,5 +26,5 @@ A DeepSeek Harness (DSH) plugin with two halves built by one script: a Node host
 - **Package manager**: pnpm (≥10; git-hosted installs need `allowBuilds: dsh-kenari-usage: true` in the profile `pnpm-workspace.yaml` so the `prepare` build script may run).
 - **Build**: `node build.mjs` — tsc emit for the host (`dist/kenari-usage.js` + `.d.ts`), esbuild bundle for the client (`dist/client.js`).
 - **Typecheck**: `tsc --noEmit` (`pnpm typecheck`).
-- **Tests**: vitest 3 (`pnpm test` → `vitest run`; 5 test files, ~39 tests).
+- **Tests**: vitest 3 (`pnpm test` → `vitest run`; 3 test files, 22 tests).
 - **Distribution**: installed into a DSH profile via `dsh plugin --profile web add github:azmirizkifar20/DSH-Kenari-Usage` (or a local dir/tarball); `package.json` declares `exports` plus a `dsh.client` block (`platform: web`, injected runtime packages) so the shell loads the dock.

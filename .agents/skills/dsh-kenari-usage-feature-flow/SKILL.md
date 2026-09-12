@@ -25,9 +25,8 @@ Follow this flow for feature work in this repository.
 - Add a focused test or update an existing one when the change affects behavior that is easy to regress or expensive to verify manually (feature flow, domain rules, calculations, parsers, persistence, reusable UI logic with meaningful branching).
 - Do not force tests for every low-risk edit (copy tweaks, layout-only adjustments, trivial wiring). When you choose not to add tests, state the reason in the completion summary.
 - Match the existing vitest layout in this repo:
-  - Unit tests for isolated domain logic, formatting, helpers: `src/quota.test.ts` (live parsers/formatters), `src/format.test.ts` (legacy format module).
+  - Unit tests for isolated domain logic, formatting, helpers: `src/quota.test.ts` (live parsers/formatters).
   - Integration tests with mocked fetch: `src/tool.test.ts` (tool execute/render), `src/route.test.ts` (route contract).
-  - DOM behavior tests with a mocked DOM: `src/panel.test.ts` (legacy panel).
 - Framework is vitest only (see `package.json` `test` script); there is no phpunit/jest/pytest config.
 
 ## 4. Verify the changed path
@@ -58,7 +57,7 @@ Docs are part of feature work, not optional follow-up. Never leave implementatio
 ## Repo conventions
 
 - TypeScript strict, ESM (`"type": "module"`, NodeNext); host imports of sibling modules use explicit `.js` extensions (`./quota.js`).
-- Semicolon style is mixed: newer modules (`src/kenari-usage.ts`, `src/client/*`, tests, `build.mjs`) omit semicolons; pure parser modules (`src/quota.ts`, `src/format.ts`, `src/panel.ts`) use them — match the file you are editing.
+- Semicolon style is mixed: `src/quota.ts` uses semicolons; everything else (`src/kenari-usage.ts`, `src/client/*`, tests, `build.mjs`) omits them — match the file you are editing.
 - 2-space indent, single quotes, trailing commas in multi-line literals.
 - Host/client services are consumed through structural mirrors (local interfaces like `UsageWebServer`, `DockSlotsService`), never through direct imports of host internals.
 - Tool render/card functions (`output.render`, `presentationMeta`, `presentCall`, `presentResult`) and everything in `src/quota.ts` are pure — no I/O, no clock, no random — so they replay safely.

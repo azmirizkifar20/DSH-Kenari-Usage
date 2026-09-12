@@ -6,8 +6,8 @@ A DeepSeek Harness plugin that shows **Kenari provider usage** — official `kn-
 -   📌 **Floating usage card** — a Kenari Usage card (KUOTA PAKET Rp rows + bars, RINGKASAN boxes, PENGGUNAAN 30 HARI list) floating bottom-right over the chat body (drag the header to reposition anywhere, position persists in `localStorage`; chevron collapses/expands), auto-polling every 6s (configurable), no prompt needed
 -   🛠️ **Model tool** — `kenari_usage`, so the agent can query usage on demand
 -   🔑 **API key auth** — sends your `kn-` Bearer key as an explicit `Authorization:` header; nothing else leaves your machine
--   🖥️ **Web UI** — floating card (draggable, collapsible, refresh, KUOTA PAKET / RINGKASAN / 30-day list). The framework-free DOM panel in `src/panel.ts` is legacy/unmounted, kept only for tests.
--   ✅ **Tests** — vitest, ~40 tests (quota parse/format + Bearer tool integration + route contract + legacy panel/format)
+-   🖥️ **Web UI** — floating card (draggable, collapsible, refresh, KUOTA PAKET / RINGKASAN / 30-day list).
+-   ✅ **Tests** — vitest, 22 tests (quota parse/format + Bearer tool integration + route contract)
 
 ## Install
 
@@ -85,17 +85,13 @@ pnpm build       # node build.mjs → dist/ (host tsc + client esbuild bundle)
 src/
 ├── kenari-usage.ts  # host half: Config (apiKey Bearer), defineTool kenari_usage, GET /dsh-kenari-usage route
 ├── quota.ts         # pure Bearer-API logic: parseQuota, parseUsageMarkdown (MCP usage source), formatRp, formatResetShort
-├── format.ts        # legacy pure shared logic: parseSubscription, formatPercent, formatCountdown, formatUsage (unmounted; kept for tests)
-├── panel.ts         # legacy framework-free DOM panel (unmounted; kept for tests)
 ├── client/
 │   ├── index.ts     # browser half: registers conversation.session.header.utilities
 │   ├── api.ts       # same-origin fetch to /dsh-kenari-usage + payload types
 │   └── KenariDock.tsx  # dock component (auto-poll 6s + Refresh + error card)
-├── format.test.ts   # unit tests: percent, countdown, edges
 ├── quota.test.ts    # quota + MCP markdown-table parse/format tests
 ├── tool.test.ts     # tool integration tests with mocked fetch (Bearer quota+MCP + missing-apiKey)
-├── route.test.ts    # GET /dsh-kenari-usage frozen contract tests
-└── panel.test.ts    # panel behavior tests with mocked DOM
+└── route.test.ts    # GET /dsh-kenari-usage frozen contract tests
 build.mjs           # dual build: tsc (host) + esbuild browser CJS + __ModuleLoader__ banner
 cordis.yml          # local dev patch (points at dist/)
 cordis.patch.yml    # bundle patch manifest (package name)
@@ -103,7 +99,7 @@ cordis.patch.yml    # bundle patch manifest (package name)
 
 ### Build notes
 
--   `build.mjs` runs `tsc -p tsconfig.json` for the host half (`dist/kenari-usage.js` + `format.js`; Node ESM cannot resolve the TS sibling `./format.js` from source), then esbuild-bundles `src/client/index.ts` → `dist/client.js` (browser CJS wrapped in `window.__ModuleLoader__.load`, id `dsh-kenari-usage`; react/react-dom/`@deepseek-ai/*` stay external, resolved by the shell).
+-   `build.mjs` runs `tsc -p tsconfig.json` for the host half (`dist/kenari-usage.js` + `quota.js`; Node ESM cannot resolve the TS sibling `./quota.js` from source), then esbuild-bundles `src/client/index.ts` → `dist/client.js` (browser CJS wrapped in `window.__ModuleLoader__.load`, id `dsh-kenari-usage`; react/react-dom/`@deepseek-ai/*` stay external, resolved by the shell).
 -   `package.json` declares `exports` (`./dist/kenari-usage.js`, `./dist/client.js`) + `dsh.client` (`platform: web`, inject runtime/locale/ui-slots) so the shell loads the dock after `dsh plugin add github:`.
 -   `@deepseek-ai/cordis` is a peer dependency; `@deepseek-ai/dsh-tools` / `dsh-llm` are pinned via `pnpm.overrides` to a coherent `0.1.0-rc.8` tree (caret rc ranges otherwise resolve across rc lines).
 -   Tool render/card functions (`output.render`, `presentResult`, `presentationMeta`) are pure — no I/O, clock, or random — so they replay safely.
@@ -112,7 +108,7 @@ cordis.patch.yml    # bundle patch manifest (package name)
 
 -   **Quota + 30-day usage** — quota comes from the official Bearer `GET /v1/account/quota` (plan name, coupon, weekly/monthly used/remaining Rp + reset timestamps); per-model 30-day usage comes from the MCP `kenari_usage` markdown table, parsed server-side.
 -   **Auto-poll, dock only** — the dock refetches every 6s by default (host-suggested `pollIntervalMs`; `pollIntervalSecs: 0` = default 6s, floored at 6s); the chat tool path never polls. No WebSocket/SSE.
--   **Single formatting path** — the tool and the host route share `formatUsage` (host-side); the dock re-derives its used-% and reset-date display client-side from the raw `used_frac` / `serverTime + resets_in_secs` numbers (host and client bundle separately).
+-   **Formatting split** — tool text formatting is host-side (`formatQuotaText` + `formatRp` in `src/quota.ts`); the dock re-derives its used-% / reset-countdown display client-side from the raw `used_rp`/`remaining_rp`/`resets_at` numbers (host and client bundle separately).
 
 ## Security
 

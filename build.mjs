@@ -1,6 +1,6 @@
 // Dual host/client build for dsh-kenari-usage.
 // Host half: `tsc -p tsconfig.json` emits dist/*.js + .d.ts
-// (kenari-usage.js imports ./format.js, so the tsc output layout is kept).
+// (kenari-usage.js imports ./quota.js, so the tsc output layout is kept).
 // Client half: esbuild bundles src/client/index.ts into dist/client.js as a
 // browser CJS bundle wrapped in window.__ModuleLoader__.load.
 import { execFileSync } from 'node:child_process'

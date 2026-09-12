@@ -3,7 +3,7 @@
 This folder contains documentation for implemented features and current state.
 
 **Updated**: 2026-09-12
-**Recent**: KUOTA PAKET reset stamp replaced by a live countdown (`reset dalam 1h 18j`) ticking each second from `resets_at`.
+**Recent**: Legacy residue removed — `src/format.ts` + `src/panel.ts` (unmounted cookie-era iteration), their tests, and the legacy `cordis.yml` endpoint are gone; codebase is apiKey-only with 22 tests.
 
 ## Index
 

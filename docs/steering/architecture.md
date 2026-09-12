@@ -46,10 +46,6 @@ A dual-half DSH plugin. The **host half** (Node/TypeScript, tsc-compiled to `dis
 | `fetchDock` | Same-origin fetch + payload/failure types | `src/client/api.ts` |
 | `build.mjs` | Dual build: tsc host emit + esbuild client CJS bundle | `build.mjs` |
 
-## Legacy Components (unmounted)
-
-- `src/format.ts` (`parseSubscription`, `formatPercent`, `formatCountdown`, `formatUsage`) and `src/panel.ts` (`createKenariPanel`) are a legacy iteration that consumed `https://kenari.id/api/subscription` (`used_frac`/`resets_in_secs` windows). They are **not mounted** anywhere — kept only so their vitest coverage (`src/format.test.ts`, `src/panel.test.ts`) still passes. The `config.endpoint` value in `cordis.yml` is the corresponding leftover ignored by the current `Config` schema.
-
 ## Cross-Module Communication
 
 - Host ↔ client: HTTP only — same-origin `GET /dsh-kenari-usage`, JSON contract documented in [api-conventions.md](./api-conventions.md) and mirrored by `DockPayload`/`DockFailure` in `src/client/api.ts`.
