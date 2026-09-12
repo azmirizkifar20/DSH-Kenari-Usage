@@ -3,7 +3,7 @@
 This folder contains documentation for implemented features and current state.
 
 **Updated**: 2026-09-12
-**Recent**: Docs scaffolded with feature-flow-creator — split the plugin into 01 (host tool + route) and 02 (dock UI) feature docs.
+**Recent**: Default dock auto-poll lowered from 60s to 6s; `pollIntervalSecs` configurable with a 6s floor (route payload + client fallback updated, contract test added).
 
 ## Index
 

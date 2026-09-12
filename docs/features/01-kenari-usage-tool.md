@@ -29,7 +29,7 @@ The Node-side half of the `dsh-kenari-usage` plugin. It registers the `kenari_us
 1. Non-GET → `405` with `{ok: false, error, retryable: false}`.
 2. Missing/empty `apiKey` → `502` "Kenari apiKey is not configured…".
 3. Upstream failure → `502` `{ok: false, error, retryable}` (30s outer budget via `AbortSignal.timeout`).
-4. Success → `200` `{ok: true, plan, coupon, week, month, usage, serverTime, pollIntervalMs}`. `pollIntervalMs = pollIntervalSecs * 1000` floored at `60000` (min 60s cadence). Fresh fetch per request (no caching); `?refresh=1` is accepted as a no-op.
+4. Success → `200` `{ok: true, plan, coupon, week, month, usage, serverTime, pollIntervalMs}`. `pollIntervalMs` comes from config `pollIntervalSecs` (default `6000` = 6s, floored at 6s). Fresh fetch per request (no caching); `?refresh=1` is accepted as a no-op.
 
 ## 3) Domain & Data
 

@@ -3,11 +3,12 @@
  * host's `conversation.composer.dock` slot.
  *
  * UX mirrors the framework-free panel (`src/panel.ts`): Refresh is disabled
- * while fetching, rapid clicks collapse (1000ms debounce + abort-prior),
- * failures show an error card with Retry while the last data dims, and the
- * display is recomputed on a 1s display timer that never refetches. Unlike
+ * while fetching (the ⟳ glyph swaps to a spinning arc), rapid clicks collapse
+ * (1000ms debounce + abort-prior), failures show an error card with Retry
+ * while the last data dims, and the display is recomputed on a 1s display
+ * timer that never refetches. Unlike
  * the panel, the dock ALSO auto-polls: every `pollIntervalMs`
- * (host-provided, default 60000) it refetches the same-origin
+ * (host-provided, default 6000) it refetches the same-origin
  * `/dsh-kenari-usage` route.
  *
  * Layout is a compact card rendered as a FLOATING surface over the chat
@@ -36,8 +37,8 @@ const REFRESH_DEBOUNCE_MS = 1000
 /** Local display-tick cadence (ms) — refreshes display only, never fetches. */
 const DISPLAY_TICK_MS = 1000
 
-/** Auto-poll cadence (ms) when the host payload omits pollIntervalMs. */
-const DEFAULT_POLL_INTERVAL_MS = 60000
+/** Auto-poll cadence (ms) when the host payload omits pollIntervalMs — 6s. */
+const DEFAULT_POLL_INTERVAL_MS = 6000
 
 /** Card width (px) — default/fallback; user-resizable 200–520 via the left/right edge handles. */
 const CARD_WIDTH = 270
@@ -314,6 +315,27 @@ function formatResetShort(iso: string): string {
   return `${day} ${month} ${hh}:${mm}`
 }
 
+/** id for the once-injected dock stylesheet (keyframes the spinner needs). */
+const DOCK_STYLE_ID = 'kenari-usage-dock-styles'
+
+/**
+ * Inline styles cannot express @keyframes, so the dock injects one tiny
+ * stylesheet once (idempotent by id) for the refresh spinner. The spinning
+ * element opts in via the .kenari-dock-spin class.
+ */
+function ensureDockStyles(): void {
+  if (typeof document === 'undefined') return
+  if (document.getElementById(DOCK_STYLE_ID) !== null) return
+  const style = document.createElement('style')
+  style.id = DOCK_STYLE_ID
+  style.textContent = [
+    '@keyframes kenari-dock-spin { to { transform: rotate(360deg); } }',
+    '.kenari-dock-spin { animation: kenari-dock-spin 0.8s linear infinite; }',
+    '@media (prefers-reduced-motion: reduce) { .kenari-dock-spin { animation-duration: 2.4s; } }',
+  ].join('\n')
+  document.head.appendChild(style)
+}
+
 /** One fetched payload plus the wall-clock moment it arrived. */
 interface DockSnapshot {
   payload: DockPayload
@@ -554,7 +576,9 @@ export function KenariDock() {
   }, [])
 
   // Initial load (debounce window is empty, so the dock is never blank).
+  // Also injects the once-only stylesheet the refresh spinner animates with.
   useEffect(() => {
+    ensureDockStyles()
     load(false)
   }, [load])
 
@@ -711,8 +735,11 @@ export function KenariDock() {
     background: 'none',
     border: 'none',
     padding: '0 2px',
+    display: 'inline-flex',
+    alignItems: 'center',
+    justifyContent: 'center',
     cursor: refreshing ? 'default' : 'pointer',
-    opacity: refreshing ? 0.5 : 1,
+    opacity: refreshing ? 0.75 : 1,
   }
 
   const trackStyle: CSSProperties = {
@@ -892,12 +919,28 @@ export function KenariDock() {
           style={buttonStyle}
           data-testid="kenari-refresh"
           aria-label="Refresh"
-          title="Refresh"
+          aria-busy={refreshing}
+          title={refreshing ? 'Refreshing…' : 'Refresh'}
           disabled={refreshing}
           onPointerDown={(e) => e.stopPropagation()}
           onClick={() => load(false)}
         >
-          ⟳
+          {refreshing ? (
+            <svg
+              className="kenari-dock-spin"
+              width="12"
+              height="12"
+              viewBox="0 0 24 24"
+              fill="none"
+              aria-hidden="true"
+              style={{ display: 'block' }}
+            >
+              <circle cx="12" cy="12" r="9" stroke="currentColor" strokeOpacity="0.25" strokeWidth="3" />
+              <path d="M21 12a9 9 0 0 0-9-9" stroke="currentColor" strokeWidth="3" strokeLinecap="round" />
+            </svg>
+          ) : (
+            '⟳'
+          )}
         </button>
       </div>
       {!collapsed && (

@@ -129,7 +129,20 @@ describe('GET /dsh-kenari-usage Bearer route (frozen contract)', () => {
     expect(usage['total_requests']).toBe(3537)
     expect(usage['total_tokens']).toBe(292944237 + 2139620 + 100 + 200)
     expect(typeof payload['serverTime']).toBe('number')
-    expect(payload['pollIntervalMs']).toBe(60000)
+    expect(payload['pollIntervalMs']).toBe(6000)
+  })
+
+  it('pollIntervalMs honors pollIntervalSecs with a 6s floor', async () => {
+    mockQuotaMcp()
+    const floored = await captureRoute({ apiKey: 'kn-test', pollIntervalSecs: 2 })
+    const resFloored = makeRes()
+    await floored.handler({ method: 'GET' }, resFloored)
+    expect(JSON.parse(resFloored.body)['pollIntervalMs']).toBe(6000)
+
+    const configured = await captureRoute({ apiKey: 'kn-test', pollIntervalSecs: 30 })
+    const resConfigured = makeRes()
+    await configured.handler({ method: 'GET' }, resConfigured)
+    expect(JSON.parse(resConfigured.body)['pollIntervalMs']).toBe(30000)
   })
 
   it('MCP failure -> 200 with usage null (quota card still renders)', async () => {

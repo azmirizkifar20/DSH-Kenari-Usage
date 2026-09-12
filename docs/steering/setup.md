@@ -18,7 +18,7 @@ How to run, debug, and work on this project locally.
    - id: kenari-usage
      config:
        apiKey: 'PASTE_KN_KEY_HERE'   # secret — never share/commit this file
-       pollIntervalSecs: 0           # dock poll cadence in seconds; host floors at 60
+       pollIntervalSecs: 0           # dock poll cadence in seconds; default 6s, host floors at 6
    ```
 
 3. pnpm ≥ 10 build-script approval (first `dsh plugin add` from GitHub): copy the package key pnpm prints into that profile's `pnpm-workspace.yaml`:

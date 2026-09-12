@@ -34,7 +34,7 @@ How the plugin boots, initializes, and routes requests at runtime. This is the s
 
 ## Background / Scheduled Flows
 
-- **Dock auto-poll**: `setInterval` inside `KenariDock` (`src/client/KenariDock.tsx`), cadence = the payload's `pollIntervalMs` (host-suggested, floored at 60s; config `pollIntervalSecs: 0` means the default 60s).
+- **Dock auto-poll**: `setInterval` inside `KenariDock` (`src/client/KenariDock.tsx`), cadence = the payload's `pollIntervalMs` (host-suggested; default 6s, floored at 6s — config `pollIntervalSecs: 0` means the default 6s).
 - **Display tick**: a 1s local interval (`DISPLAY_TICK_MS`) updates countdown/relative display text only — it never fetches.
 - The chat tool path never polls; there is no WebSocket/SSE.
 

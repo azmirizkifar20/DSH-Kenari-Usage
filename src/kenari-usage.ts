@@ -23,7 +23,9 @@ export const Config: Schema<Config> = Schema.object({
   apiKey: Schema.string().description(
     'Kenari API key (kn-... secret — set via the profile cordis.patch.yml, never commit it).',
   ),
-  pollIntervalSecs: Schema.number().min(0).default(0).description('Poll interval in seconds, 0 = off.'),
+  pollIntervalSecs: Schema.number().min(0).default(0).description(
+    'Dock auto-poll interval in seconds; 0 = default 6s, clamped to a 6s minimum.',
+  ),
 })
 
 /** Official Bearer API endpoints. */
@@ -32,6 +34,9 @@ export const MCP_URL = 'https://kenari.id/mcp'
 
 /** Per-attempt fetch timeout (ms). */
 const FETCH_TIMEOUT_MS = 8000
+
+/** Default dock auto-poll cadence (seconds) — also the floor. */
+const DEFAULT_POLL_INTERVAL_SECS = 6
 
 /** Config cells set by apply(). */
 let activeApiKey: string | undefined
@@ -513,8 +518,11 @@ interface UsageWebServer {
   }): () => void
 }
 
+/** Route payload cadence: config seconds (0/unset = default), floored at 6s. */
 function pollIntervalMsOf(secs: number): number {
-  return secs >= 60 ? Math.floor(secs * 1000) : 60000
+  const effective =
+    secs > 0 ? Math.max(DEFAULT_POLL_INTERVAL_SECS, Math.floor(secs)) : DEFAULT_POLL_INTERVAL_SECS
+  return effective * 1000
 }
 
 function writeUsageJson(res: UsageHttpResponse, status: number, value: unknown): void {

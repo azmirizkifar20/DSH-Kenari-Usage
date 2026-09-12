@@ -2,7 +2,7 @@
 
 This folder documents the front-end design system of this plugin: a single UI surface, the floating usage dock.
 
-**Updated**: 2026-09-12 — scaffolded with one module (`dock`) covering the KenariDock floating card.
+**Updated**: 2026-09-12 — documented the refresh-spinner convention (once-injected keyframes stylesheet) in the dock module rules.
 
 ## Structure
 
